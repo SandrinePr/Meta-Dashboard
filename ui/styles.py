@@ -410,12 +410,38 @@ div[data-baseweb="menu"] li[aria-selected="true"] {
     color: var(--rro-text) !important;
 }
 
-/* Results header */
+/* Results section */
+[data-testid="stVerticalBlockBorderWrapper"]:has(.rro-results-section) {
+    background: linear-gradient(
+        145deg,
+        rgba(26, 36, 52, 0.98) 0%,
+        rgba(20, 27, 39, 1) 55%,
+        rgba(16, 28, 44, 1) 100%
+    ) !important;
+    border: 1px solid var(--rro-border-accent) !important;
+    border-radius: 18px !important;
+    box-shadow:
+        0 10px 30px rgba(0, 0, 0, 0.35),
+        inset 0 1px 0 rgba(255, 255, 255, 0.03) !important;
+    padding: 8px 8px 12px !important;
+    margin: 1.25rem 0 1.75rem 0 !important;
+}
+
+[data-testid="stVerticalBlockBorderWrapper"]:has(.rro-results-section) > div {
+    background: transparent !important;
+}
+
+.rro-results-section {
+    padding: 12px 12px 4px;
+}
+
 .rro-results-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin: 1.5rem 0 1rem 0;
+    margin: 0.35rem 0 0.65rem 0;
+    padding-bottom: 0.65rem;
+    border-bottom: 1px solid var(--rro-border);
 }
 
 .rro-results-header h2 {
@@ -428,7 +454,7 @@ div[data-baseweb="menu"] li[aria-selected="true"] {
 .rro-results-subcount {
     color: var(--rro-text-muted);
     font-size: 0.88rem;
-    margin: -0.5rem 0 0.35rem 0;
+    margin: 0 0 0.55rem 0;
 }
 
 .rro-results-totals {
@@ -440,6 +466,10 @@ div[data-baseweb="menu"] li[aria-selected="true"] {
     font-size: 0.9rem;
     font-weight: 600;
     margin: 0 0 1rem 0;
+    padding: 10px 12px;
+    background: rgba(184, 120, 68, 0.08);
+    border: 1px solid rgba(184, 120, 68, 0.28);
+    border-radius: 10px;
 }
 
 .rro-results-totals .rro-stat {
