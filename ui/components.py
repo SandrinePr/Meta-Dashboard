@@ -579,6 +579,27 @@ def render_comment_card(comment: SearchResult, query: str = "") -> None:
     st.markdown(card_html, unsafe_allow_html=True)
 
 
+def render_results_section(
+    results: list[SearchResult],
+    *,
+    query: str = "",
+    content_count: int,
+    comment_count: int,
+) -> None:
+    """Render results inside a clear visual section (header + cards/empty state)."""
+    with st.container(border=True):
+        st.markdown(
+            '<div class="rro-results-section">',
+            unsafe_allow_html=True,
+        )
+        render_results_header(content_count, comment_count, results)
+        if not results:
+            st.info("Geen resultaten gevonden in de lokale database.")
+        else:
+            render_results(results, query=query)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+
 def render_results(results: list[SearchResult], query: str | None = None) -> None:
     """Render results, grouping comments under their parent post when present."""
     query = query or ""

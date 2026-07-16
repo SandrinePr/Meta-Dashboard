@@ -14,8 +14,7 @@ from sync import get_sync_summary, run_sync
 from ui.components import (
     MIN_QUERY_LENGTH,
     inject_styles,
-    render_results,
-    render_results_header,
+    render_results_section,
     render_search_form,
     render_sidebar_stats,
     render_sync_result,
@@ -106,11 +105,12 @@ def main() -> None:
     )
     content_count = sum(1 for r in results if r.entity_type == "post")
     comment_count = sum(1 for r in results if r.entity_type == "comment")
-    render_results_header(content_count, comment_count, results)
-    if not results:
-        st.info("Geen resultaten gevonden in de lokale database.")
-    else:
-        render_results(results, query=trimmed)
+    render_results_section(
+        results,
+        query=trimmed,
+        content_count=content_count,
+        comment_count=comment_count,
+    )
 
 
 if __name__ == "__main__":
