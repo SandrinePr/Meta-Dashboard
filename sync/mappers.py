@@ -66,7 +66,8 @@ def normalize_facebook_post(payload: dict[str, Any]) -> dict[str, Any]:
                     image = media.get("image")
                     if isinstance(image, dict):
                         media_url = image.get("src")
-                media_url = media_url or first.get("url")
+                # Do NOT fall back to attachments[].url — that is often a
+                # facebook.com page link, not an image file.
 
     return {
         "external_id": str(payload.get("id", "")),

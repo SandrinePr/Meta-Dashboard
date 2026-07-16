@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import shutil
 import sqlite3
+import zipfile
 from pathlib import Path
 
 from config import get_settings
@@ -12,6 +13,8 @@ from config import get_settings
 logger = logging.getLogger(__name__)
 
 SEED_DB_PATH = Path(__file__).resolve().parents[1] / "data" / "seed_social_search.db"
+SEED_MEDIA_ZIP = Path(__file__).resolve().parents[1] / "data" / "seed_media.zip"
+MEDIA_DIR = Path(__file__).resolve().parents[1] / "data" / "media"
 
 
 def get_connection(db_path: Path | None = None) -> sqlite3.Connection:
@@ -37,6 +40,21 @@ def _post_count(db_path: Path) -> int:
         return 0
 
 
+def ensure_media_cache() -> bool:
+    """Extract bundled thumbnail zip when the local media folder is empty."""
+    MEDIA_DIR.mkdir(parents=True, exist_ok=True)
+    if any(MEDIA_DIR.glob("post_*.*")):
+        return False
+    if not SEED_MEDIA_ZIP.exists():
+        logger.warning("No seed media zip found at %s", SEED_MEDIA_ZIP)
+        return False
+    with zipfile.ZipFile(SEED_MEDIA_ZIP, "r") as zf:
+        zf.extractall(MEDIA_DIR)
+    count = len(list(MEDIA_DIR.glob("post_*.*")))
+    logger.info("Extracted %s cached thumbnails from %s", count, SEED_MEDIA_ZIP)
+    return True
+
+
 def ensure_seed_database(db_path: Path | None = None) -> bool:
     """Copy the bundled seed DB when the runtime DB is missing or empty.
 
@@ -46,20 +64,21 @@ def ensure_seed_database(db_path: Path | None = None) -> bool:
     effective_db_path = db_path or settings.database_path
     effective_db_path.parent.mkdir(parents=True, exist_ok=True)
 
-    if _post_count(effective_db_path) > 0:
-        return False
+    seeded = False
+    if _post_count(effective_db_path) == 0:
+        if SEED_DB_PATH.exists():
+            shutil.copy2(SEED_DB_PATH, effective_db_path)
+            logger.info(
+                "Seeded runtime database from %s (%s posts)",
+                SEED_DB_PATH,
+                _post_count(effective_db_path),
+            )
+            seeded = True
+        else:
+            logger.warning("No seed database found at %s", SEED_DB_PATH)
 
-    if not SEED_DB_PATH.exists():
-        logger.warning("No seed database found at %s", SEED_DB_PATH)
-        return False
-
-    shutil.copy2(SEED_DB_PATH, effective_db_path)
-    logger.info(
-        "Seeded runtime database from %s (%s posts)",
-        SEED_DB_PATH,
-        _post_count(effective_db_path),
-    )
-    return True
+    ensure_media_cache()
+    return seeded
 
 
 def initialize_database(db_path: Path | None = None, schema_path: Path | None = None) -> None:
