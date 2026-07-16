@@ -46,6 +46,35 @@ def main() -> None:
         (cutoff,),
     )
     conn.execute("DELETE FROM posts WHERE published_at < ?", (cutoff,))
+    # Drop known local test fixtures that break image display.
+    conn.execute(
+        """
+        DELETE FROM comments WHERE post_id IN (
+            SELECT id FROM posts
+            WHERE thumbnail_url LIKE '%example.com%'
+               OR media_url LIKE '%example.com%'
+               OR text IN ('Updated', 'Yumi', 'CULIMAAT special offer')
+        )
+        """
+    )
+    conn.execute(
+        """
+        DELETE FROM post_hashtags WHERE post_id IN (
+            SELECT id FROM posts
+            WHERE thumbnail_url LIKE '%example.com%'
+               OR media_url LIKE '%example.com%'
+               OR text IN ('Updated', 'Yumi', 'CULIMAAT special offer')
+        )
+        """
+    )
+    conn.execute(
+        """
+        DELETE FROM posts
+        WHERE thumbnail_url LIKE '%example.com%'
+           OR media_url LIKE '%example.com%'
+           OR text IN ('Updated', 'Yumi', 'CULIMAAT special offer')
+        """
+    )
     conn.execute(
         "DELETE FROM hashtags WHERE id NOT IN (SELECT hashtag_id FROM post_hashtags)"
     )
@@ -71,6 +100,14 @@ def main() -> None:
         SEED.unlink()
     TMP.rename(SEED)
     print(f"Wrote {SEED} ({SEED.stat().st_size / 1024 / 1024:.2f} MB)")
+
+    # Cache thumbnails next so Render can show images without live CDN URLs.
+    import subprocess
+
+    subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "cache_thumbnails.py")],
+        check=True,
+    )
 
 
 if __name__ == "__main__":

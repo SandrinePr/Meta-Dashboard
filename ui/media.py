@@ -2,19 +2,75 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
+import mimetypes
+from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from db.database import get_connection
 
 logger = logging.getLogger(__name__)
+
+MEDIA_DIR = Path(__file__).resolve().parents[1] / "data" / "media"
+
+# Exact hosts that are page sites / fixtures, not image CDNs.
+_BLOCKED_HOSTS = {
+    "example.com",
+    "www.example.com",
+    "example.org",
+    "www.example.org",
+    "facebook.com",
+    "www.facebook.com",
+    "m.facebook.com",
+    "fb.com",
+    "www.fb.com",
+    "instagram.com",
+    "www.instagram.com",
+}
 
 
 def _is_valid_url(value: str | None) -> bool:
     if not value:
         return False
     return value.startswith("http://") or value.startswith("https://")
+
+
+def _is_displayable_image_url(value: str | None) -> bool:
+    """Return True only for CDN-style image URLs (not page permalinks/fixtures)."""
+    if not _is_valid_url(value):
+        return False
+    assert value is not None
+    host = (urlparse(value).hostname or "").lower()
+    if host in _BLOCKED_HOSTS:
+        return False
+    # Reject facebook.com web pages, but allow *.fbcdn.net image hosts.
+    if host.endswith("facebook.com") and "fbcdn" not in host:
+        return False
+    return True
+
+
+def local_media_path(post_id: int) -> Path | None:
+    """Return the first existing cached thumbnail for a post id."""
+    for ext in (".jpg", ".jpeg", ".png", ".webp", ".gif"):
+        path = MEDIA_DIR / f"post_{post_id}{ext}"
+        if path.exists() and path.stat().st_size > 0:
+            return path
+    return None
+
+
+def local_media_data_uri(post_id: int) -> str | None:
+    """Load a cached thumbnail as a data URI for HTML cards."""
+    path = local_media_path(post_id)
+    if path is None:
+        return None
+    mime, _ = mimetypes.guess_type(path.name)
+    if not mime:
+        mime = "image/jpeg"
+    encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+    return f"data:{mime};base64,{encoded}"
 
 
 def _urls_from_raw_json(raw_json: str | None) -> list[tuple[str, str]]:
@@ -30,7 +86,7 @@ def _urls_from_raw_json(raw_json: str | None) -> list[tuple[str, str]]:
     found: list[tuple[str, str]] = []
     for key in ("thumbnail_url", "media_url", "full_picture"):
         value = payload.get(key)
-        if _is_valid_url(value):
+        if _is_displayable_image_url(value):
             found.append((value, f"raw_json.{key}"))
 
     attachments = payload.get("attachments")
@@ -40,16 +96,18 @@ def _urls_from_raw_json(raw_json: str | None) -> list[tuple[str, str]]:
             for idx, item in enumerate(items):
                 if not isinstance(item, dict):
                     continue
-                url = item.get("url")
-                if _is_valid_url(url):
-                    found.append((url, f"raw_json.attachments[{idx}].url"))
                 media = item.get("media")
                 if isinstance(media, dict):
                     image = media.get("image")
                     if isinstance(image, dict):
                         src = image.get("src")
-                        if _is_valid_url(src):
-                            found.append((src, f"raw_json.attachments[{idx}].media.image.src"))
+                        if _is_displayable_image_url(src):
+                            found.append(
+                                (src, f"raw_json.attachments[{idx}].media.image.src")
+                            )
+                url = item.get("url")
+                if _is_displayable_image_url(url):
+                    found.append((url, f"raw_json.attachments[{idx}].url"))
 
     return found
 
@@ -61,23 +119,27 @@ def resolve_display_image_url(
     media_type: str | None = None,
     raw_json: str | None = None,
     search_index_thumbnail: str | None = None,
+    prefer_thumbnail: bool = False,
 ) -> tuple[str | None, str]:
     """Pick the first usable image URL and return it with a source label."""
     candidates: list[tuple[str, str]] = []
 
-    if _is_valid_url(search_index_thumbnail):
+    if _is_displayable_image_url(search_index_thumbnail):
         candidates.append((search_index_thumbnail, "search_index.thumbnail_url"))
 
-    is_video = (media_type or "").upper() == "VIDEO"
-    field_order = (
-        ("thumbnail_url", thumbnail_url),
-        ("media_url", media_url),
-    ) if is_video else (
-        ("media_url", media_url),
-        ("thumbnail_url", thumbnail_url),
-    )
+    is_video = (media_type or "").upper() in {"VIDEO", "REELS", "REEL"}
+    if prefer_thumbnail or is_video:
+        field_order = (
+            ("thumbnail_url", thumbnail_url),
+            ("media_url", media_url),
+        )
+    else:
+        field_order = (
+            ("media_url", media_url),
+            ("thumbnail_url", thumbnail_url),
+        )
     for field_name, value in field_order:
-        if _is_valid_url(value):
+        if _is_displayable_image_url(value):
             candidates.append((value, field_name))
 
     candidates.extend(_urls_from_raw_json(raw_json))
@@ -100,16 +162,19 @@ def get_image_for_search_result(result) -> tuple[str | None, str]:
         if result.entity_type == "post":
             row = conn.execute(
                 """
-                SELECT thumbnail_url, media_url, media_type, raw_json
+                SELECT id, platform, thumbnail_url, media_url, media_type, raw_json
                 FROM posts
                 WHERE id = ?
                 """,
                 (result.entity_id,),
             ).fetchone()
+            post_id = result.entity_id
         else:
             row = conn.execute(
                 """
                 SELECT
+                    p.id AS id,
+                    p.platform,
                     p.thumbnail_url,
                     p.media_url,
                     p.media_type,
@@ -120,16 +185,24 @@ def get_image_for_search_result(result) -> tuple[str | None, str]:
                 """,
                 (result.entity_id,),
             ).fetchone()
+            post_id = int(row["id"]) if row else None
+
+    if post_id is not None:
+        local_uri = local_media_data_uri(int(post_id))
+        if local_uri:
+            return local_uri, "local_cache"
 
     if not row:
         return resolve_display_image_url(search_index_thumbnail=result.thumbnail_url)
 
+    prefer_thumbnail = (row["platform"] or "") == "facebook"
     return resolve_display_image_url(
         search_index_thumbnail=result.thumbnail_url,
         thumbnail_url=row["thumbnail_url"],
         media_url=row["media_url"],
         media_type=row["media_type"],
         raw_json=row["raw_json"],
+        prefer_thumbnail=prefer_thumbnail,
     )
 
 
@@ -376,7 +449,7 @@ def get_image_for_entity(entity_type: str, entity_id: int) -> tuple[str | None, 
         if entity_type == "post":
             row = conn.execute(
                 """
-                SELECT thumbnail_url, media_url, media_type, raw_json
+                SELECT id, platform, thumbnail_url, media_url, media_type, raw_json
                 FROM posts
                 WHERE id = ?
                 """,
@@ -384,16 +457,22 @@ def get_image_for_entity(entity_type: str, entity_id: int) -> tuple[str | None, 
             ).fetchone()
             if not row:
                 return None, "none"
+            local_uri = local_media_data_uri(int(row["id"]))
+            if local_uri:
+                return local_uri, "local_cache"
             return resolve_display_image_url(
                 thumbnail_url=row["thumbnail_url"],
                 media_url=row["media_url"],
                 media_type=row["media_type"],
                 raw_json=row["raw_json"],
+                prefer_thumbnail=(row["platform"] or "") == "facebook",
             )
 
         row = conn.execute(
             """
             SELECT
+                p.id AS id,
+                p.platform,
                 p.thumbnail_url,
                 p.media_url,
                 p.media_type,
@@ -406,9 +485,13 @@ def get_image_for_entity(entity_type: str, entity_id: int) -> tuple[str | None, 
         ).fetchone()
         if not row:
             return None, "none"
+        local_uri = local_media_data_uri(int(row["id"]))
+        if local_uri:
+            return local_uri, "local_cache"
         return resolve_display_image_url(
             thumbnail_url=row["thumbnail_url"],
             media_url=row["media_url"],
             media_type=row["media_type"],
             raw_json=row["raw_json"],
+            prefer_thumbnail=(row["platform"] or "") == "facebook",
         )

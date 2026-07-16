@@ -100,35 +100,54 @@ def test_classify_unknown_defaults_to_post() -> None:
 
 def test_video_prefers_thumbnail_before_media_url() -> None:
     url, source = resolve_display_image_url(
-        thumbnail_url="https://example.com/thumb.jpg",
-        media_url="https://example.com/video.mp4",
+        thumbnail_url="https://scontent.cdninstagram.com/v/t51/thumb.jpg",
+        media_url="https://scontent.cdninstagram.com/v/t51/video.mp4",
         media_type="VIDEO",
     )
-    assert url == "https://example.com/thumb.jpg"
+    assert url == "https://scontent.cdninstagram.com/v/t51/thumb.jpg"
     assert source == "thumbnail_url"
 
 
 def test_image_prefers_media_url_before_thumbnail() -> None:
     url, source = resolve_display_image_url(
-        thumbnail_url="https://example.com/thumb.jpg",
-        media_url="https://example.com/image.jpg",
+        thumbnail_url="https://scontent.cdninstagram.com/v/t51/thumb.jpg",
+        media_url="https://scontent.cdninstagram.com/v/t51/image.jpg",
         media_type="IMAGE",
     )
-    assert url == "https://example.com/image.jpg"
+    assert url == "https://scontent.cdninstagram.com/v/t51/image.jpg"
     assert source == "media_url"
 
 
 def test_raw_json_full_picture_fallback() -> None:
     url, source = resolve_display_image_url(
-        raw_json='{"full_picture":"https://example.com/fb.jpg"}',
+        raw_json='{"full_picture":"https://scontent.xx.fbcdn.net/v/t1/fb.jpg"}',
     )
-    assert url == "https://example.com/fb.jpg"
+    assert url == "https://scontent.xx.fbcdn.net/v/t1/fb.jpg"
     assert source == "raw_json.full_picture"
 
 
 def test_search_index_thumbnail_used_when_db_empty() -> None:
     url, source = resolve_display_image_url(
-        search_index_thumbnail="https://example.com/index.jpg",
+        search_index_thumbnail="https://scontent.cdninstagram.com/v/t51/index.jpg",
     )
-    assert url == "https://example.com/index.jpg"
+    assert url == "https://scontent.cdninstagram.com/v/t51/index.jpg"
     assert source == "search_index.thumbnail_url"
+
+
+def test_rejects_example_and_facebook_page_urls() -> None:
+    url, source = resolve_display_image_url(
+        thumbnail_url="https://example.com/thumb.jpg",
+        media_url="https://www.facebook.com/123/posts/456",
+    )
+    assert url is None
+    assert source == "none"
+
+
+def test_facebook_prefers_thumbnail_over_media() -> None:
+    url, source = resolve_display_image_url(
+        thumbnail_url="https://scontent.xx.fbcdn.net/v/t1/thumb.jpg",
+        media_url="https://scontent.xx.fbcdn.net/v/t1/big.jpg",
+        prefer_thumbnail=True,
+    )
+    assert url == "https://scontent.xx.fbcdn.net/v/t1/thumb.jpg"
+    assert source == "thumbnail_url"

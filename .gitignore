@@ -8,3 +8,5 @@ data/*.db
 data/*.sqlite
 data/*.db-journal
 !data/seed_social_search.db
+!data/seed_media.zip
+data/media/
