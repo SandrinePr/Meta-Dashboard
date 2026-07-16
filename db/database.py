@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+import logging
+import shutil
 import sqlite3
 from pathlib import Path
 
 from config import get_settings
+
+logger = logging.getLogger(__name__)
+
+SEED_DB_PATH = Path(__file__).resolve().parents[1] / "data" / "seed_social_search.db"
 
 
 def get_connection(db_path: Path | None = None) -> sqlite3.Connection:
@@ -20,11 +26,49 @@ def get_connection(db_path: Path | None = None) -> sqlite3.Connection:
     return conn
 
 
+def _post_count(db_path: Path) -> int:
+    if not db_path.exists():
+        return 0
+    try:
+        with sqlite3.connect(db_path) as conn:
+            row = conn.execute("SELECT COUNT(*) FROM posts").fetchone()
+            return int(row[0]) if row else 0
+    except sqlite3.Error:
+        return 0
+
+
+def ensure_seed_database(db_path: Path | None = None) -> bool:
+    """Copy the bundled seed DB when the runtime DB is missing or empty.
+
+    Returns True when a seed copy was performed.
+    """
+    settings = get_settings()
+    effective_db_path = db_path or settings.database_path
+    effective_db_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if _post_count(effective_db_path) > 0:
+        return False
+
+    if not SEED_DB_PATH.exists():
+        logger.warning("No seed database found at %s", SEED_DB_PATH)
+        return False
+
+    shutil.copy2(SEED_DB_PATH, effective_db_path)
+    logger.info(
+        "Seeded runtime database from %s (%s posts)",
+        SEED_DB_PATH,
+        _post_count(effective_db_path),
+    )
+    return True
+
+
 def initialize_database(db_path: Path | None = None, schema_path: Path | None = None) -> None:
-    """Create all tables and indexes from schema.sql."""
+    """Create all tables and indexes from schema.sql, seeding first if needed."""
     settings = get_settings()
     effective_db_path = db_path or settings.database_path
     effective_schema_path = schema_path or Path(__file__).with_name("schema.sql")
+
+    ensure_seed_database(effective_db_path)
 
     schema_sql = effective_schema_path.read_text(encoding="utf-8")
     with get_connection(effective_db_path) as conn:
