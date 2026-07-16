@@ -11,6 +11,26 @@ def test_extract_instagram_stats() -> None:
     assert stats == {"likes": 12, "comments": 4, "views": 230}
 
 
+def test_extract_instagram_engagement_fields() -> None:
+    raw = json.dumps(
+        {
+            "like_count": 10,
+            "comments_count": 2,
+            "saved_count": 8,
+            "shares_count": 3,
+            "total_views_count": 400,
+        }
+    )
+    stats = extract_post_stats("instagram", raw)
+    assert stats == {
+        "likes": 10,
+        "comments": 2,
+        "saves": 8,
+        "shares": 3,
+        "views": 400,
+    }
+
+
 def test_extract_instagram_stats_skips_missing() -> None:
     raw = json.dumps({"like_count": 5})
     assert extract_post_stats("instagram", raw) == {"likes": 5}
@@ -26,6 +46,19 @@ def test_extract_facebook_stats_from_summaries() -> None:
     )
     stats = extract_post_stats("facebook", raw)
     assert stats == {"likes": 20, "comments": 7, "shares": 3}
+
+
+def test_extract_facebook_prefers_reactions_over_likes() -> None:
+    raw = json.dumps(
+        {
+            "likes": {"summary": {"total_count": 5}},
+            "reactions": {"summary": {"total_count": 22}},
+            "comments": {"summary": {"total_count": 1}},
+            "shares": {"count": 4},
+        }
+    )
+    stats = extract_post_stats("facebook", raw)
+    assert stats == {"likes": 22, "comments": 1, "shares": 4}
 
 
 def test_extract_stats_handles_bad_json() -> None:

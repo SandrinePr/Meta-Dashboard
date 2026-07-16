@@ -36,7 +36,6 @@ from ui.media import (
     get_content_type_for_result,
     get_engagement_stats,
     get_image_for_search_result,
-    get_stats_for_result,
 )
 from ui.styles import RRO_CSS
 
@@ -425,26 +424,34 @@ def _match_badges(result: SearchResult, query: str) -> str:
 
 
 _STAT_DISPLAY_ORDER = (
-    ("likes", HEART_STAT_ICON),
-    ("comments", MESSAGE_STAT_ICON),
-    ("shares", SHARE_STAT_ICON),
-    ("views", VIEW_STAT_ICON),
-    ("saves", SAVE_STAT_ICON),
+    ("views", VIEW_STAT_ICON, "Weergaven"),
+    ("likes", HEART_STAT_ICON, "Likes"),
+    ("comments", MESSAGE_STAT_ICON, "Reacties"),
+    ("saves", SAVE_STAT_ICON, "Opgeslagen"),
+    ("shares", SHARE_STAT_ICON, "Gedeeld"),
 )
 
 
 def _stat_items_html(stats: dict[str, int]) -> list[str]:
-    """Build stat spans for available metrics with value > 0 (real icons)."""
-    return [
-        f'<span class="rro-stat">{icon}<span class="rro-stat-value-inline">{stats[key]}</span></span>'
-        for key, icon in _STAT_DISPLAY_ORDER
-        if stats.get(key, 0) > 0
-    ]
+    """Build labeled stat spans for metrics present in the payload (incl. 0)."""
+    items: list[str] = []
+    for key, icon, label in _STAT_DISPLAY_ORDER:
+        if key not in stats:
+            continue
+        value = stats[key]
+        items.append(
+            '<span class="rro-stat">'
+            f"{icon}"
+            f'<span class="rro-stat-label-inline">{html.escape(label)}</span>'
+            f'<span class="rro-stat-value-inline">{html.escape(str(value))}</span>'
+            "</span>"
+        )
+    return items
 
 
 def _stats_html(result: SearchResult) -> str:
     """Render a compact engagement stats line; hides missing metrics."""
-    stats = get_stats_for_result(result)
+    stats = get_engagement_stats(result)
     if not stats:
         return ""
     items = _stat_items_html(stats)
@@ -565,6 +572,7 @@ def render_comment_card(comment: SearchResult, query: str = "") -> None:
         action_html = ""
 
     comment_badge = '<span class="badge badge-comment badge-match">Comment</span>'
+    stats_html = _stats_html(comment)
     card_html = (
         '<div class="rro-comment-card">'
         f'<div class="rro-comment-label">{COMMENT_ICON}'
@@ -572,6 +580,7 @@ def render_comment_card(comment: SearchResult, query: str = "") -> None:
         f'<div class="rro-comment-badges">{comment_badge}{match_html}'
         f'<span class="rro-comment-date">{safe_date}</span></div>'
         f'<div class="rro-comment-text">{highlighted}</div>'
+        f"{stats_html}"
         f"{parent_html}"
         f"{action_html}"
         "</div>"
@@ -633,19 +642,18 @@ def _aggregate_engagement(results: list[SearchResult]) -> dict[str, int]:
     totals: dict[str, int] = {}
     for result in results:
         for key, value in get_engagement_stats(result).items():
-            if value:
-                totals[key] = totals.get(key, 0) + value
+            totals[key] = totals.get(key, 0) + int(value)
     return totals
 
 
 def _totals_html(results: list[SearchResult]) -> str:
-    """Render a compact engagement totals line; hides zero/missing metrics."""
+    """Render engagement totals for the results section."""
     totals = _aggregate_engagement(results)
     items = _stat_items_html(totals)
     if not items:
         return ""
     joined = ' <span class="rro-totals-sep">&middot;</span> '.join(items)
-    return f'<div class="rro-results-totals">Totaal: {joined}</div>'
+    return f'<div class="rro-results-totals">Totaal engagement: {joined}</div>'
 
 
 def render_results_header(

@@ -310,19 +310,34 @@ def extract_post_stats(platform: str, raw_json: str | None) -> dict[str, int]:
         comments = _safe_int(payload.get("comments_count"))
         if comments is not None:
             stats["comments"] = comments
-        for key in ("play_count", "view_count", "video_views", "views"):
+        for key in (
+            "total_views_count",
+            "view_count",
+            "play_count",
+            "video_views",
+            "views",
+        ):
             views = _safe_int(payload.get(key))
             if views is not None:
                 stats["views"] = views
                 break
-        for key in ("save_count", "saved", "saves"):
+        for key in ("saved_count", "save_count", "saved", "saves"):
             saves = _safe_int(payload.get(key))
             if saves is not None:
                 stats["saves"] = saves
                 break
+        for key in ("shares_count", "share_count"):
+            shares = _safe_int(payload.get(key))
+            if shares is not None:
+                stats["shares"] = shares
+                break
     else:
+        # Prefer reactions (all emoji reactions) over likes-only when available.
+        reactions = _summary_total(payload.get("reactions"))
         likes = _summary_total(payload.get("likes"))
-        if likes is not None:
+        if reactions is not None:
+            stats["likes"] = reactions
+        elif likes is not None:
             stats["likes"] = likes
         comments = _summary_total(payload.get("comments"))
         if comments is not None:
@@ -332,6 +347,11 @@ def extract_post_stats(platform: str, raw_json: str | None) -> dict[str, int]:
             share_count = _safe_int(shares.get("count"))
             if share_count is not None:
                 stats["shares"] = share_count
+        for key in ("video_views", "view_count", "views"):
+            views = _safe_int(payload.get(key))
+            if views is not None:
+                stats["views"] = views
+                break
 
     return stats
 

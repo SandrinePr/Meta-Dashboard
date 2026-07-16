@@ -711,10 +711,14 @@ div[data-baseweb="menu"] li[aria-selected="true"] {
 .rro-card-stats {
     display: flex;
     flex-wrap: wrap;
-    gap: 16px;
-    margin-top: 10px;
+    gap: 10px 14px;
+    margin-top: 12px;
+    padding: 10px 12px;
     color: var(--rro-text-muted);
-    font-size: 0.9rem;
+    font-size: 0.86rem;
+    background: rgba(184, 120, 68, 0.07);
+    border: 1px solid rgba(184, 120, 68, 0.22);
+    border-radius: 10px;
 }
 
 .rro-stat {
@@ -728,14 +732,27 @@ div[data-baseweb="menu"] li[aria-selected="true"] {
     height: 15px;
     flex-shrink: 0;
     display: block;
+    color: var(--rro-cta);
+}
+
+.rro-stat-label-inline {
+    color: var(--rro-text-muted);
+    font-weight: 500;
+    line-height: 1;
 }
 
 .rro-stat-value-inline {
+    color: var(--rro-text);
+    font-weight: 700;
     line-height: 1;
 }
 
 .rro-totals-sep {
     color: var(--rro-text-muted);
+}
+
+.rro-results-totals .rro-stat-label-inline {
+    font-weight: 600;
 }
 
 .rro-card-text .hashtag,
