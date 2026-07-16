@@ -9,6 +9,7 @@ from datetime import date, datetime
 from typing import Iterable
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 from search.engine import (
     DEFAULT_FILTER_TYPES,
@@ -177,8 +178,57 @@ def matches_hashtag_query(result: SearchResult, query: str) -> bool:
 
 
 def inject_styles() -> None:
-    """Inject global RRO theme CSS."""
+    """Inject global RRO theme CSS and mobile sidebar click-outside close."""
     st.markdown(RRO_CSS, unsafe_allow_html=True)
+    components.html(
+        """
+        <script>
+        (function () {
+          const MQ = window.matchMedia("(max-width: 800px)");
+          const doc = window.parent.document;
+
+          function sidebarOpen() {
+            const sidebar = doc.querySelector('section[data-testid="stSidebar"]');
+            if (!sidebar) return false;
+            const style = window.parent.getComputedStyle(sidebar);
+            const transform = style.transform || "";
+            if (transform.includes("matrix") && transform !== "none") {
+              const match = transform.match(/matrix\\(([^)]+)\\)/);
+              if (match) {
+                const parts = match[1].split(",").map(function (p) { return parseFloat(p.trim()); });
+                if (parts.length >= 5 && parts[4] < -50) return false;
+              }
+            }
+            return style.visibility !== "hidden" && style.display !== "none";
+          }
+
+          function collapseSidebar() {
+            const btn = doc.querySelector('[data-testid="stSidebarCollapseButton"]');
+            if (btn && sidebarOpen()) btn.click();
+          }
+
+          if (doc.__rroSidebarOutsideBound) {
+            doc.removeEventListener("click", doc.__rroSidebarOutsideBound, true);
+          }
+          doc.__rroSidebarOutsideBound = function (event) {
+            if (!MQ.matches) return;
+            const sidebar = doc.querySelector('section[data-testid="stSidebar"]');
+            const collapseBtn = doc.querySelector('[data-testid="stSidebarCollapseButton"]');
+            const openBtn = doc.querySelector('[data-testid="collapsedControl"]');
+            if (!sidebar || !collapseBtn) return;
+            if (!sidebarOpen()) return;
+            const target = event.target;
+            if (sidebar.contains(target)) return;
+            if (collapseBtn.contains(target)) return;
+            if (openBtn && openBtn.contains(target)) return;
+            collapseSidebar();
+          };
+          doc.addEventListener("click", doc.__rroSidebarOutsideBound, true);
+        })();
+        </script>
+        """,
+        height=0,
+    )
 
 
 def _format_date(value: str | None) -> str:

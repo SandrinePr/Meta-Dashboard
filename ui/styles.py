@@ -51,21 +51,73 @@ h2, h3, h4, h5, h6, p, label, span, div {
     color: var(--rro-text-muted) !important;
 }
 
-/* Sidebar always visible */
-[data-testid="stSidebarCollapseButton"],
-[data-testid="collapsedControl"],
-button[kind="header"] {
-    display: none !important;
-}
-
 section[data-testid="stSidebar"] {
     background: linear-gradient(180deg, #0B1826 0%, #07111D 55%, #101C2C 100%) !important;
     border-right: 1px solid var(--rro-border-accent);
-    min-width: 300px !important;
-    width: 300px !important;
-    transform: translateX(0) !important;
-    visibility: visible !important;
     box-shadow: 4px 0 24px rgba(0, 0, 0, 0.25);
+}
+
+/* Desktop (>800px): sidebar always open, no collapse UI */
+@media (min-width: 801px) {
+    [data-testid="stSidebarCollapseButton"],
+    [data-testid="collapsedControl"],
+    button[kind="header"] {
+        display: none !important;
+    }
+
+    section[data-testid="stSidebar"] {
+        min-width: 300px !important;
+        width: 300px !important;
+        transform: translateX(0) !important;
+        visibility: visible !important;
+    }
+}
+
+/* Mobile (≤800px): collapsible sidebar with close (X) control */
+@media (max-width: 800px) {
+    [data-testid="stSidebarCollapseButton"] {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        position: absolute !important;
+        top: 10px !important;
+        right: 10px !important;
+        z-index: 1000002 !important;
+        width: 40px !important;
+        height: 40px !important;
+        border-radius: 8px !important;
+        border: 1px solid var(--rro-border-accent) !important;
+        background: rgba(26, 36, 52, 0.95) !important;
+        color: var(--rro-text) !important;
+        cursor: pointer !important;
+    }
+
+    [data-testid="stSidebarCollapseButton"] svg {
+        display: none !important;
+    }
+
+    [data-testid="stSidebarCollapseButton"]::after {
+        content: "×";
+        font-size: 1.7rem;
+        line-height: 1;
+        color: var(--rro-text);
+        font-weight: 400;
+    }
+
+    [data-testid="collapsedControl"] {
+        display: flex !important;
+        z-index: 1000001 !important;
+    }
+
+    section[data-testid="stSidebar"] {
+        min-width: min(300px, 88vw) !important;
+        width: min(300px, 88vw) !important;
+    }
+
+    /* Space for the close button above sidebar content */
+    section[data-testid="stSidebar"] > div:first-child {
+        padding-top: 48px !important;
+    }
 }
 
 section[data-testid="stSidebar"] > div {
