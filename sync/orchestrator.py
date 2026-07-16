@@ -16,6 +16,7 @@ from db.repository import (
     upsert_search_index,
 )
 from meta.client import MetaClient, MetaClientError, TOKEN_EXPIRED_MESSAGE, format_meta_client_error
+from meta.insights import flatten_facebook_insights, flatten_instagram_insights
 from sync.mappers import (
     normalize_facebook_comment,
     normalize_facebook_post,
@@ -89,7 +90,25 @@ def sync_instagram(client: MetaClient) -> SyncStats:
             conn.commit()
             return stats
 
+        insights_failures = 0
+        insights_stopped = False
         for raw_post in media_items:
+            media_id = str(raw_post.get("id") or "")
+            if media_id and not insights_stopped:
+                try:
+                    insights = client.get_instagram_media_insights(media_id)
+                    raw_post = flatten_instagram_insights(raw_post, insights)
+                except MetaClientError as exc:
+                    if getattr(exc, "error_code", None) == 190:
+                        insights_stopped = True
+                        _append_meta_sync_error(
+                            stats,
+                            "Instagram insights ophalen gestopt",
+                            exc,
+                        )
+                    else:
+                        insights_failures += 1
+
             post_data = normalize_instagram_post(raw_post)
             if not post_data["external_id"]:
                 continue
@@ -171,6 +190,11 @@ def sync_instagram(client: MetaClient) -> SyncStats:
                     thumbnail_url=post_data["thumbnail_url"],
                 )
 
+        if insights_failures:
+            stats.errors.append(
+                f"Instagram weergaven (insights) mislukt voor {insights_failures} media-items."
+            )
+
         conn.commit()
 
     return stats
@@ -204,7 +228,25 @@ def sync_facebook(client: MetaClient) -> SyncStats:
             conn.commit()
             return stats
 
+        insights_failures = 0
+        insights_stopped = False
         for raw_post in posts:
+            post_id = str(raw_post.get("id") or "")
+            if post_id and not insights_stopped:
+                try:
+                    insights = client.get_facebook_post_insights(post_id)
+                    raw_post = flatten_facebook_insights(raw_post, insights)
+                except MetaClientError as exc:
+                    if getattr(exc, "error_code", None) == 190:
+                        insights_stopped = True
+                        _append_meta_sync_error(
+                            stats,
+                            "Facebook insights ophalen gestopt",
+                            exc,
+                        )
+                    else:
+                        insights_failures += 1
+
             post_data = normalize_facebook_post(raw_post)
             if not post_data["external_id"]:
                 continue
@@ -285,6 +327,11 @@ def sync_facebook(client: MetaClient) -> SyncStats:
                     permalink=post_data["permalink"],
                     thumbnail_url=post_data["thumbnail_url"],
                 )
+
+        if insights_failures:
+            stats.errors.append(
+                f"Facebook weergaven (insights) mislukt voor {insights_failures} posts."
+            )
 
         conn.commit()
 

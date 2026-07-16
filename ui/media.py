@@ -11,6 +11,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from db.database import get_connection
+from meta.insights import parse_insights_metrics
 
 logger = logging.getLogger(__name__)
 
@@ -303,6 +304,10 @@ def extract_post_stats(platform: str, raw_json: str | None) -> dict[str, int]:
         return {}
 
     stats: dict[str, int] = {}
+    insight_metrics = parse_insights_metrics(
+        payload.get("insights") if isinstance(payload.get("insights"), dict) else None
+    )
+
     if platform == "instagram":
         likes = _safe_int(payload.get("like_count"))
         if likes is not None:
@@ -310,7 +315,9 @@ def extract_post_stats(platform: str, raw_json: str | None) -> dict[str, int]:
         comments = _safe_int(payload.get("comments_count"))
         if comments is not None:
             stats["comments"] = comments
+
         for key in (
+            "insights_views",
             "total_views_count",
             "view_count",
             "play_count",
@@ -321,11 +328,20 @@ def extract_post_stats(platform: str, raw_json: str | None) -> dict[str, int]:
             if views is not None:
                 stats["views"] = views
                 break
-        for key in ("saved_count", "save_count", "saved", "saves"):
+        if "views" not in stats:
+            for key in ("total_views", "views", "impressions"):
+                if key in insight_metrics:
+                    stats["views"] = insight_metrics[key]
+                    break
+
+        for key in ("saved_count", "save_count", "insights_saved", "saved", "saves"):
             saves = _safe_int(payload.get(key))
             if saves is not None:
                 stats["saves"] = saves
                 break
+        if "saves" not in stats and "saved" in insight_metrics:
+            stats["saves"] = insight_metrics["saved"]
+
         for key in ("shares_count", "share_count"):
             shares = _safe_int(payload.get(key))
             if shares is not None:
@@ -347,11 +363,22 @@ def extract_post_stats(platform: str, raw_json: str | None) -> dict[str, int]:
             share_count = _safe_int(shares.get("count"))
             if share_count is not None:
                 stats["shares"] = share_count
-        for key in ("video_views", "view_count", "views"):
+
+        for key in ("insights_views", "video_views", "view_count", "views"):
             views = _safe_int(payload.get(key))
             if views is not None:
                 stats["views"] = views
                 break
+        if "views" not in stats:
+            for key in (
+                "post_media_view",
+                "post_video_views",
+                "post_impressions",
+                "post_impressions_unique",
+            ):
+                if key in insight_metrics:
+                    stats["views"] = insight_metrics[key]
+                    break
 
     return stats
 

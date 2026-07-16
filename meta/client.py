@@ -292,6 +292,58 @@ class MetaClient:
 
         return self.get_paginated(f"{ig_id}/{MEDIA_EDGE}", params=params, use_page_token=True)
 
+    def get_instagram_media_insights(
+        self,
+        media_id: str,
+        *,
+        metrics: str = "views,reach,saved,total_views",
+    ) -> dict[str, Any]:
+        """Fetch lifetime insights for one Instagram media object (post/reel/carousel)."""
+        if not media_id.strip():
+            raise MetaConfigError("media_id is required for Instagram insights fetch.")
+
+        try:
+            return self.get_json(
+                f"{media_id.strip()}/insights",
+                params={"metric": metrics},
+                use_page_token=True,
+            )
+        except MetaRequestError as primary_exc:
+            # total_views is Facebook-Login-only; retry without it, then try impressions
+            # for older feed posts created before the impressions deprecation window.
+            fallbacks = (
+                "views,reach,saved",
+                "impressions,reach,saved",
+            )
+            last_exc: MetaRequestError = primary_exc
+            for fallback in fallbacks:
+                if fallback == metrics:
+                    continue
+                try:
+                    return self.get_json(
+                        f"{media_id.strip()}/insights",
+                        params={"metric": fallback},
+                        use_page_token=True,
+                    )
+                except MetaRequestError as exc:
+                    last_exc = exc
+            raise last_exc
+
+    def get_facebook_post_insights(
+        self,
+        post_id: str,
+        *,
+        metrics: str = "post_impressions,post_media_view,post_video_views",
+    ) -> dict[str, Any]:
+        """Fetch insights for one Facebook Page post."""
+        if not post_id.strip():
+            raise MetaConfigError("post_id is required for Facebook insights fetch.")
+        return self.get_json(
+            f"{post_id.strip()}/insights",
+            params={"metric": metrics},
+            use_page_token=True,
+        )
+
     def get_instagram_comments(
         self,
         media_id: str,

@@ -1,8 +1,4 @@
-"""Refresh engagement fields on existing posts without a full media re-sync.
-
-Updates posts.raw_json with likes/comments/views/saves/shares (and FB reactions)
-using the current Meta Graph field sets.
-"""
+"""Refresh engagement + view insights on existing posts without a full media re-sync."""
 
 from __future__ import annotations
 
@@ -25,6 +21,7 @@ from meta.endpoints import (  # noqa: E402
     INSTAGRAM_MEDIA_FIELDS,
     as_fields_param,
 )
+from meta.insights import flatten_facebook_insights, flatten_instagram_insights  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger("refresh_engagement")
@@ -84,16 +81,26 @@ def refresh_posts(*, platform: str | None = None, limit: int | None = None) -> t
             if plat == "instagram":
                 fresh = client.get_json(external_id, params={"fields": ig_fields})
                 merged = _merge_engagement(existing, fresh, IG_ENGAGEMENT_KEYS)
+                for key in ("id", "caption", "media_type", "media_product_type", "permalink", "timestamp"):
+                    if key in fresh:
+                        merged[key] = fresh[key]
+                insights = client.get_instagram_media_insights(external_id)
+                merged = flatten_instagram_insights(merged, insights)
             else:
                 fresh = client.get_json(external_id, params={"fields": fb_fields})
                 merged = _merge_engagement(existing, fresh, FB_ENGAGEMENT_KEYS)
-                # Keep non-engagement fields from existing when API omits them.
-                for key, value in existing.items():
-                    if key not in merged:
-                        merged[key] = value
-                for key in ("id", "message", "created_time", "permalink_url", "full_picture", "attachments"):
+                for key in (
+                    "id",
+                    "message",
+                    "created_time",
+                    "permalink_url",
+                    "full_picture",
+                    "attachments",
+                ):
                     if key in fresh:
                         merged[key] = fresh[key]
+                insights = client.get_facebook_post_insights(external_id)
+                merged = flatten_facebook_insights(merged, insights)
         except MetaClientError as exc:
             failed += 1
             logger.warning(
@@ -102,6 +109,9 @@ def refresh_posts(*, platform: str | None = None, limit: int | None = None) -> t
                 plat,
                 format_meta_client_error(exc),
             )
+            if getattr(exc, "error_code", None) == 190:
+                logger.error("Token probleem — stop refresh.")
+                break
             continue
 
         new_raw = json.dumps(merged, ensure_ascii=False)
@@ -116,7 +126,7 @@ def refresh_posts(*, platform: str | None = None, limit: int | None = None) -> t
                 conn.commit()
             updated += 1
 
-        if idx % 50 == 0 or idx == len(rows):
+        if idx % 25 == 0 or idx == len(rows):
             logger.info(
                 "progress %s/%s updated=%s skipped=%s failed=%s",
                 idx,
@@ -132,7 +142,9 @@ def refresh_posts(*, platform: str | None = None, limit: int | None = None) -> t
 def main() -> None:
     import argparse
 
-    parser = argparse.ArgumentParser(description="Refresh engagement metrics on posts.")
+    parser = argparse.ArgumentParser(
+        description="Refresh engagement + view insights on posts."
+    )
     parser.add_argument("--platform", choices=["instagram", "facebook"])
     parser.add_argument("--limit", type=int, default=None)
     args = parser.parse_args()
