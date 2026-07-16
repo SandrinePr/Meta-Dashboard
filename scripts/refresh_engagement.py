@@ -1,0 +1,144 @@
+"""Refresh engagement fields on existing posts without a full media re-sync.
+
+Updates posts.raw_json with likes/comments/views/saves/shares (and FB reactions)
+using the current Meta Graph field sets.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import sys
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+load_dotenv(ROOT / ".env", override=True)
+
+from db.database import get_connection, initialize_database  # noqa: E402
+from meta.client import MetaClient, MetaClientError, format_meta_client_error  # noqa: E402
+from meta.endpoints import (  # noqa: E402
+    FACEBOOK_POST_FIELDS,
+    INSTAGRAM_MEDIA_FIELDS,
+    as_fields_param,
+)
+
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+logger = logging.getLogger("refresh_engagement")
+
+IG_ENGAGEMENT_KEYS = (
+    "like_count",
+    "comments_count",
+    "saved_count",
+    "shares_count",
+    "total_views_count",
+    "view_count",
+)
+FB_ENGAGEMENT_KEYS = ("likes", "reactions", "comments", "shares", "video_views", "view_count")
+
+
+def _merge_engagement(existing: dict, fresh: dict, keys: tuple[str, ...]) -> dict:
+    merged = dict(existing)
+    for key in keys:
+        if key in fresh:
+            merged[key] = fresh[key]
+    return merged
+
+
+def refresh_posts(*, platform: str | None = None, limit: int | None = None) -> tuple[int, int, int]:
+    """Return (updated, skipped, failed)."""
+    initialize_database()
+    client = MetaClient.from_settings()
+    updated = skipped = failed = 0
+
+    with get_connection() as conn:
+        sql = "SELECT id, platform, external_id, raw_json FROM posts"
+        params: list[object] = []
+        if platform:
+            sql += " WHERE platform = ?"
+            params.append(platform)
+        sql += " ORDER BY id DESC"
+        if limit:
+            sql += " LIMIT ?"
+            params.append(limit)
+        rows = conn.execute(sql, params).fetchall()
+
+    ig_fields = as_fields_param(INSTAGRAM_MEDIA_FIELDS)
+    fb_fields = as_fields_param(FACEBOOK_POST_FIELDS)
+
+    for idx, row in enumerate(rows, start=1):
+        post_id = int(row["id"])
+        plat = row["platform"]
+        external_id = row["external_id"]
+        try:
+            existing = json.loads(row["raw_json"] or "{}")
+        except json.JSONDecodeError:
+            existing = {}
+        if not isinstance(existing, dict):
+            existing = {}
+
+        try:
+            if plat == "instagram":
+                fresh = client.get_json(external_id, params={"fields": ig_fields})
+                merged = _merge_engagement(existing, fresh, IG_ENGAGEMENT_KEYS)
+            else:
+                fresh = client.get_json(external_id, params={"fields": fb_fields})
+                merged = _merge_engagement(existing, fresh, FB_ENGAGEMENT_KEYS)
+                # Keep non-engagement fields from existing when API omits them.
+                for key, value in existing.items():
+                    if key not in merged:
+                        merged[key] = value
+                for key in ("id", "message", "created_time", "permalink_url", "full_picture", "attachments"):
+                    if key in fresh:
+                        merged[key] = fresh[key]
+        except MetaClientError as exc:
+            failed += 1
+            logger.warning(
+                "fail id=%s platform=%s: %s",
+                post_id,
+                plat,
+                format_meta_client_error(exc),
+            )
+            continue
+
+        new_raw = json.dumps(merged, ensure_ascii=False)
+        if new_raw == (row["raw_json"] or ""):
+            skipped += 1
+        else:
+            with get_connection() as conn:
+                conn.execute(
+                    "UPDATE posts SET raw_json = ? WHERE id = ?",
+                    (new_raw, post_id),
+                )
+                conn.commit()
+            updated += 1
+
+        if idx % 50 == 0 or idx == len(rows):
+            logger.info(
+                "progress %s/%s updated=%s skipped=%s failed=%s",
+                idx,
+                len(rows),
+                updated,
+                skipped,
+                failed,
+            )
+
+    return updated, skipped, failed
+
+
+def main() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Refresh engagement metrics on posts.")
+    parser.add_argument("--platform", choices=["instagram", "facebook"])
+    parser.add_argument("--limit", type=int, default=None)
+    args = parser.parse_args()
+    updated, skipped, failed = refresh_posts(platform=args.platform, limit=args.limit)
+    print(f"DONE updated={updated} skipped={skipped} failed={failed}")
+
+
+if __name__ == "__main__":
+    main()

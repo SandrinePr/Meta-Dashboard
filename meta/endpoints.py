@@ -37,6 +37,10 @@ INSTAGRAM_MEDIA_FIELDS = (
     "timestamp",
     "like_count",
     "comments_count",
+    "saved_count",
+    "shares_count",
+    "total_views_count",
+    "view_count",
 )
 
 INSTAGRAM_COMMENT_FIELDS = (
@@ -55,6 +59,7 @@ FACEBOOK_POST_FIELDS = (
     "full_picture",
     "attachments{media,target,type,url,description,title,subattachments}",
     "likes.summary(true)",
+    "reactions.summary(true)",
     "comments.summary(true)",
     "shares",
 )
