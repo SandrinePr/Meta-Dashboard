@@ -56,26 +56,36 @@ def ensure_media_cache() -> bool:
 
 
 def ensure_seed_database(db_path: Path | None = None) -> bool:
-    """Copy the bundled seed DB when the runtime DB is missing or empty.
+    """Copy the bundled seed DB when the runtime DB is missing, empty, or older.
 
-    Returns True when a seed copy was performed.
+    On hosts like Render the runtime DB is created once from seed. Without a
+    "seed is newer" check, later seed updates in git never replace the stale
+    runtime copy — so engagement fields stay missing after deploy.
     """
     settings = get_settings()
     effective_db_path = db_path or settings.database_path
     effective_db_path.parent.mkdir(parents=True, exist_ok=True)
 
     seeded = False
-    if _post_count(effective_db_path) == 0:
-        if SEED_DB_PATH.exists():
-            shutil.copy2(SEED_DB_PATH, effective_db_path)
-            logger.info(
-                "Seeded runtime database from %s (%s posts)",
-                SEED_DB_PATH,
-                _post_count(effective_db_path),
-            )
-            seeded = True
-        else:
-            logger.warning("No seed database found at %s", SEED_DB_PATH)
+    if not SEED_DB_PATH.exists():
+        logger.warning("No seed database found at %s", SEED_DB_PATH)
+        ensure_media_cache()
+        return False
+
+    runtime_empty = _post_count(effective_db_path) == 0
+    seed_newer = (
+        effective_db_path.exists()
+        and SEED_DB_PATH.stat().st_mtime > effective_db_path.stat().st_mtime
+    )
+    if runtime_empty or seed_newer:
+        shutil.copy2(SEED_DB_PATH, effective_db_path)
+        logger.info(
+            "Seeded runtime database from %s (%s posts, reason=%s)",
+            SEED_DB_PATH,
+            _post_count(effective_db_path),
+            "empty" if runtime_empty else "seed_newer",
+        )
+        seeded = True
 
     ensure_media_cache()
     return seeded
