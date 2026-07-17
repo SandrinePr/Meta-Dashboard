@@ -432,29 +432,35 @@ _STAT_DISPLAY_ORDER = (
 )
 
 
-def _stat_items_html(stats: dict[str, int]) -> list[str]:
-    """Build labeled stat spans for metrics present in the payload (incl. 0)."""
+def _stat_items_html(stats: dict[str, int], *, show_missing: bool = False) -> list[str]:
+    """Build labeled stat spans. With show_missing, always show the 5 core metrics."""
     items: list[str] = []
     for key, icon, label in _STAT_DISPLAY_ORDER:
         if key not in stats:
-            continue
-        value = stats[key]
+            if not show_missing:
+                continue
+            value_html = '<span class="rro-stat-value-inline rro-stat-missing">n.b.</span>'
+        else:
+            value_html = (
+                f'<span class="rro-stat-value-inline">{html.escape(str(stats[key]))}</span>'
+            )
         items.append(
             '<span class="rro-stat">'
             f"{icon}"
             f'<span class="rro-stat-label-inline">{html.escape(label)}</span>'
-            f'<span class="rro-stat-value-inline">{html.escape(str(value))}</span>'
+            f"{value_html}"
             "</span>"
         )
     return items
 
 
 def _stats_html(result: SearchResult) -> str:
-    """Render a compact engagement stats line; hides missing metrics."""
+    """Render engagement stats; for posts always show the Weergaven row (n.b. if unknown)."""
     stats = get_engagement_stats(result)
-    if not stats:
+    show_missing = result.entity_type == "post"
+    if not stats and not show_missing:
         return ""
-    items = _stat_items_html(stats)
+    items = _stat_items_html(stats, show_missing=show_missing)
     if not items:
         return ""
     return f'<div class="rro-card-stats">{"".join(items)}</div>'
@@ -592,16 +598,17 @@ def render_results_section(
     results: list[SearchResult],
     *,
     query: str = "",
-    content_count: int,
-    comment_count: int,
+    content_count: int | None = None,
+    comment_count: int | None = None,
 ) -> None:
     """Render results inside a clear visual section (header + cards/empty state)."""
+    _ = content_count, comment_count  # kept for backward compatibility; no longer shown
     with st.container(border=True):
         st.markdown(
             '<div class="rro-results-section">',
             unsafe_allow_html=True,
         )
-        render_results_header(content_count, comment_count, results)
+        render_results_header(results)
         if not results:
             st.info("Geen resultaten gevonden in de lokale database.")
         else:
@@ -649,27 +656,31 @@ def _aggregate_engagement(results: list[SearchResult]) -> dict[str, int]:
 def _totals_html(results: list[SearchResult]) -> str:
     """Render engagement totals for the results section."""
     totals = _aggregate_engagement(results)
-    items = _stat_items_html(totals)
+    items = _stat_items_html(totals, show_missing=False)
     if not items:
         return ""
     joined = ' <span class="rro-totals-sep">&middot;</span> '.join(items)
-    return f'<div class="rro-results-totals">Totaal engagement: {joined}</div>'
+    note = ""
+    if "views" not in totals:
+        note = (
+            '<div class="rro-results-views-note">'
+            "Weergaven ontbreken: Meta Insights is nog niet gesynchroniseerd "
+            "(of de access token is verlopen). Vernieuw de token en run "
+            "<code>scripts/refresh_engagement.py</code>."
+            "</div>"
+        )
+    return f'<div class="rro-results-totals">Totaal engagement: {joined}</div>{note}'
 
 
 def render_results_header(
-    content_count: int,
-    comment_count: int,
     results: list[SearchResult] | None = None,
 ) -> None:
-    """Render results header with content/comment breakdown and engagement totals."""
-    total = content_count + comment_count
+    """Render results header with count and engagement totals."""
+    total = len(results or [])
     totals_html = _totals_html(results or [])
     st.markdown(
         '<div class="rro-results-header">'
         f"<h2>Resultaten ({total})</h2>"
-        "</div>"
-        '<div class="rro-results-subcount">'
-        f"waarvan: {content_count} content-items &middot; {comment_count} comments"
         "</div>"
         f"{totals_html}",
         unsafe_allow_html=True,

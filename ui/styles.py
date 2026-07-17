@@ -451,12 +451,6 @@ div[data-baseweb="menu"] li[aria-selected="true"] {
     color: var(--rro-text);
 }
 
-.rro-results-subcount {
-    color: var(--rro-text-muted);
-    font-size: 0.88rem;
-    margin: 0 0 0.55rem 0;
-}
-
 .rro-results-totals {
     display: flex;
     flex-wrap: wrap;
@@ -745,6 +739,28 @@ div[data-baseweb="menu"] li[aria-selected="true"] {
     color: var(--rro-text);
     font-weight: 700;
     line-height: 1;
+}
+
+.rro-stat-missing {
+    color: var(--rro-text-muted) !important;
+    font-weight: 600 !important;
+    font-style: italic;
+}
+
+.rro-results-views-note {
+    margin: -0.35rem 0 1rem 0;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(184, 120, 68, 0.35);
+    background: rgba(184, 120, 68, 0.12);
+    color: var(--rro-text-muted);
+    font-size: 0.86rem;
+    line-height: 1.4;
+}
+
+.rro-results-views-note code {
+    color: var(--rro-cta);
+    font-size: 0.84rem;
 }
 
 .rro-totals-sep {
