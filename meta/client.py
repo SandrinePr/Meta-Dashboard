@@ -333,16 +333,37 @@ class MetaClient:
         self,
         post_id: str,
         *,
-        metrics: str = "post_impressions,post_media_view,post_video_views",
+        metrics: str = "post_media_view,post_total_media_view_unique",
     ) -> dict[str, Any]:
         """Fetch insights for one Facebook Page post."""
         if not post_id.strip():
             raise MetaConfigError("post_id is required for Facebook insights fetch.")
-        return self.get_json(
-            f"{post_id.strip()}/insights",
-            params={"metric": metrics},
-            use_page_token=True,
-        )
+
+        params = {"metric": metrics, "period": "lifetime"}
+        try:
+            return self.get_json(
+                f"{post_id.strip()}/insights",
+                params=params,
+                use_page_token=True,
+            )
+        except MetaRequestError as primary_exc:
+            fallbacks = (
+                "post_media_view",
+                "post_impressions,post_impressions_unique",
+            )
+            last_exc: MetaRequestError = primary_exc
+            for fallback in fallbacks:
+                if fallback == metrics:
+                    continue
+                try:
+                    return self.get_json(
+                        f"{post_id.strip()}/insights",
+                        params={"metric": fallback, "period": "lifetime"},
+                        use_page_token=True,
+                    )
+                except MetaRequestError as exc:
+                    last_exc = exc
+            raise last_exc
 
     def get_instagram_comments(
         self,
