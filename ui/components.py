@@ -432,10 +432,18 @@ _STAT_DISPLAY_ORDER = (
 )
 
 
-def _stat_items_html(stats: dict[str, int], *, show_missing: bool = False) -> list[str]:
+def _stat_items_html(
+    stats: dict[str, int],
+    *,
+    show_missing: bool = False,
+    exclude_keys: frozenset[str] | None = None,
+) -> list[str]:
     """Build labeled stat spans. With show_missing, always show the 5 core metrics."""
+    excluded = exclude_keys or frozenset()
     items: list[str] = []
     for key, icon, label in _STAT_DISPLAY_ORDER:
+        if key in excluded:
+            continue
         if key not in stats:
             if not show_missing:
                 continue
@@ -458,9 +466,14 @@ def _stats_html(result: SearchResult) -> str:
     """Render engagement stats; for posts always show the Weergaven row (n.b. if unknown)."""
     stats = get_engagement_stats(result)
     show_missing = result.entity_type == "post"
+    exclude = (
+        frozenset({"saves"})
+        if result.platform == "facebook" and result.entity_type == "post"
+        else frozenset()
+    )
     if not stats and not show_missing:
         return ""
-    items = _stat_items_html(stats, show_missing=show_missing)
+    items = _stat_items_html(stats, show_missing=show_missing, exclude_keys=exclude)
     if not items:
         return ""
     return f'<div class="rro-card-stats">{"".join(items)}</div>'
