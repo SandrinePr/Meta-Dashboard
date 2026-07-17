@@ -31,8 +31,6 @@ IG_ENGAGEMENT_KEYS = (
     "comments_count",
     "saved_count",
     "shares_count",
-    "total_views_count",
-    "view_count",
 )
 FB_ENGAGEMENT_KEYS = ("likes", "reactions", "comments", "shares", "video_views", "view_count")
 
@@ -57,7 +55,7 @@ def refresh_posts(*, platform: str | None = None, limit: int | None = None) -> t
         if platform:
             sql += " WHERE platform = ?"
             params.append(platform)
-        sql += " ORDER BY id DESC"
+        sql += " ORDER BY published_at DESC"
         if limit:
             sql += " LIMIT ?"
             params.append(limit)

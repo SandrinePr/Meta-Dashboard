@@ -39,8 +39,6 @@ INSTAGRAM_MEDIA_FIELDS = (
     "comments_count",
     "saved_count",
     "shares_count",
-    "total_views_count",
-    "view_count",
 )
 
 INSTAGRAM_COMMENT_FIELDS = (

@@ -103,13 +103,9 @@ def main() -> None:
         end_date=end_date,
         limit=50,
     )
-    content_count = sum(1 for r in results if r.entity_type == "post")
-    comment_count = sum(1 for r in results if r.entity_type == "comment")
     render_results_section(
         results,
         query=trimmed,
-        content_count=content_count,
-        comment_count=comment_count,
     )
 
 
