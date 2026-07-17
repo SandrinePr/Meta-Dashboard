@@ -76,8 +76,22 @@ def flatten_facebook_insights(payload: dict[str, Any], insights: dict[str, Any])
     enriched = dict(payload)
     enriched["insights"] = insights
     metrics = parse_insights_metrics(insights)
-    for key in ("post_media_view", "post_video_views", "post_impressions", "post_impressions_unique"):
+    for key in (
+        "post_media_view",
+        "post_total_media_view_unique",
+        "post_video_views",
+        "post_impressions",
+        "post_impressions_unique",
+    ):
         if key in metrics:
             enriched["insights_views"] = metrics[key]
             break
+
+    # Facebook does not expose post saves via Graph API; keep saves only when present
+    # in activity breakdown (rare) for forward compatibility.
+    activity = metrics.get("post_activity_by_action_type")
+    if isinstance(activity, dict):
+        for save_key in ("save", "saves", "saved"):
+            if save_key in activity and isinstance(activity[save_key], (int, float)):
+                enriched["insights_saved"] = int(activity[save_key])
     return enriched
