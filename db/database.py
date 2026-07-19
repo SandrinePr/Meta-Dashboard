@@ -43,18 +43,55 @@ def _post_count(db_path: Path) -> int:
         return 0
 
 
-def ensure_media_cache() -> bool:
-    """Extract bundled thumbnail zip when the local media folder is empty."""
+def _media_file_count() -> int:
+    if not MEDIA_DIR.exists():
+        return 0
+    return len(list(MEDIA_DIR.glob("post_*.*")))
+
+
+def _zip_file_count() -> int:
+    if not SEED_MEDIA_ZIP.exists():
+        return 0
+    try:
+        with zipfile.ZipFile(SEED_MEDIA_ZIP, "r") as zf:
+            return sum(1 for name in zf.namelist() if name.startswith("post_"))
+    except zipfile.BadZipFile:
+        return 0
+
+
+def ensure_media_cache(*, force: bool = False) -> bool:
+    """Extract bundled thumbnail zip when missing, stale, or forced after reseed."""
     MEDIA_DIR.mkdir(parents=True, exist_ok=True)
-    if any(MEDIA_DIR.glob("post_*.*")):
-        return False
     if not SEED_MEDIA_ZIP.exists():
         logger.warning("No seed media zip found at %s", SEED_MEDIA_ZIP)
         return False
+
+    existing = _media_file_count()
+    zip_count = _zip_file_count()
+    zip_newer = (
+        existing > 0
+        and SEED_MEDIA_ZIP.stat().st_mtime > max(
+            (p.stat().st_mtime for p in MEDIA_DIR.glob("post_*.*")),
+            default=0.0,
+        )
+    )
+    count_mismatch = existing > 0 and zip_count > 0 and existing < zip_count
+    if existing and not force and not zip_newer and not count_mismatch:
+        return False
+
+    for path in MEDIA_DIR.glob("post_*.*"):
+        path.unlink(missing_ok=True)
     with zipfile.ZipFile(SEED_MEDIA_ZIP, "r") as zf:
         zf.extractall(MEDIA_DIR)
-    count = len(list(MEDIA_DIR.glob("post_*.*")))
-    logger.info("Extracted %s cached thumbnails from %s", count, SEED_MEDIA_ZIP)
+    count = _media_file_count()
+    logger.info(
+        "Extracted %s cached thumbnails from %s (force=%s zip_newer=%s mismatch=%s)",
+        count,
+        SEED_MEDIA_ZIP,
+        force,
+        zip_newer,
+        count_mismatch,
+    )
     return True
 
 
@@ -105,7 +142,8 @@ def ensure_seed_database(db_path: Path | None = None) -> bool:
         )
         seeded = True
 
-    ensure_media_cache()
+    # Always refresh media when the DB seed was replaced so Render gets new images.
+    ensure_media_cache(force=seeded)
     return seeded
 
 
