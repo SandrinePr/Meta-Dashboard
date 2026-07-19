@@ -2,9 +2,39 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from dataclasses import dataclass
 from typing import Any
+
+# Keep previously fetched Insights when a re-sync stores media without them
+# (failed Insights call, rate limit, deleted object, etc.).
+_INSIGHT_PRESERVE_KEYS = (
+    "insights",
+    "insights_views",
+    "insights_saved",
+    "insights_reach",
+)
+
+
+def merge_post_raw_json(existing_raw: str | None, new_raw: str | None) -> str | None:
+    """Merge new post JSON onto existing, preserving Insights when missing on new."""
+    if not new_raw:
+        return existing_raw
+    if not existing_raw:
+        return new_raw
+    try:
+        existing = json.loads(existing_raw)
+        new = json.loads(new_raw)
+    except json.JSONDecodeError:
+        return new_raw
+    if not isinstance(existing, dict) or not isinstance(new, dict):
+        return new_raw
+    merged = dict(new)
+    for key in _INSIGHT_PRESERVE_KEYS:
+        if merged.get(key) is None and existing.get(key) is not None:
+            merged[key] = existing[key]
+    return json.dumps(merged, ensure_ascii=False)
 
 
 @dataclass(slots=True)
@@ -68,11 +98,12 @@ def upsert_post(
 ) -> UpsertResult:
     """Insert or update a post."""
     existing = conn.execute(
-        "SELECT id FROM posts WHERE platform = ? AND external_id = ?",
+        "SELECT id, raw_json FROM posts WHERE platform = ? AND external_id = ?",
         (platform, external_id),
     ).fetchone()
 
     if existing:
+        merged_raw = merge_post_raw_json(existing["raw_json"], raw_json)
         conn.execute(
             """
             UPDATE posts
@@ -97,7 +128,7 @@ def upsert_post(
                 thumbnail_url,
                 media_type,
                 published_at,
-                raw_json,
+                merged_raw,
                 existing["id"],
             ),
         )

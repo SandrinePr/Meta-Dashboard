@@ -87,11 +87,7 @@ def flatten_facebook_insights(payload: dict[str, Any], insights: dict[str, Any])
             enriched["insights_views"] = metrics[key]
             break
 
-    # Facebook does not expose post saves via Graph API; keep saves only when present
-    # in activity breakdown (rare) for forward compatibility.
-    activity = metrics.get("post_activity_by_action_type")
-    if isinstance(activity, dict):
-        for save_key in ("save", "saves", "saved"):
-            if save_key in activity and isinstance(activity[save_key], (int, float)):
-                enriched["insights_saved"] = int(activity[save_key])
+    # Facebook Graph API does not expose post saves — do not invent/store them.
+    enriched.pop("insights_saved", None)
+    enriched.pop("saved_count", None)
     return enriched

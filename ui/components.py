@@ -311,6 +311,13 @@ def render_sidebar_stats(totals: dict) -> None:
             "</div>"
         )
     st.markdown("".join(rows), unsafe_allow_html=True)
+    st.markdown(
+        '<div class="rro-sync-metrics-note">'
+        "<strong>n.b.</strong> = nog niet opgehaald uit Meta "
+        "(niet hetzelfde als 0). "
+        "</div>",
+        unsafe_allow_html=True,
+    )
 
 
 def render_sync_result(stats) -> None:
@@ -329,6 +336,12 @@ def render_sync_result(stats) -> None:
         f"Facebook comments toegevoegd: {stats.facebook_comments_added}",
         f"Facebook comments bijgewerkt: {stats.facebook_comments_updated}",
     ]
+    insights_ok = getattr(stats, "insights_ok", None)
+    insights_failed = getattr(stats, "insights_failed", None)
+    if insights_ok is not None:
+        lines.append(f"Insights bijgewerkt: {insights_ok}")
+    if insights_failed:
+        lines.append(f"Insights mislukt: {insights_failed}")
     for line in lines:
         st.caption(line)
 
@@ -431,6 +444,13 @@ _STAT_DISPLAY_ORDER = (
     ("shares", SHARE_STAT_ICON, "Gedeeld"),
 )
 
+# Shown when a metric is expected but not yet present in the local DB.
+_STAT_NOT_SYNCED = (
+    '<span class="rro-stat-value-inline rro-stat-missing" '
+    'title="n.b. = nog niet opgehaald uit Meta (niet hetzelfde als 0)">'
+    "n.b.</span>"
+)
+
 
 def _stat_items_html(
     stats: dict[str, int],
@@ -447,7 +467,7 @@ def _stat_items_html(
         if key not in stats:
             if not show_missing:
                 continue
-            value_html = '<span class="rro-stat-value-inline rro-stat-missing">n.b.</span>'
+            value_html = _STAT_NOT_SYNCED
         else:
             value_html = (
                 f'<span class="rro-stat-value-inline">{html.escape(str(stats[key]))}</span>'
@@ -463,17 +483,43 @@ def _stat_items_html(
 
 
 def _stats_html(result: SearchResult) -> str:
-    """Render engagement stats; for posts always show the Weergaven row (n.b. if unknown)."""
+    """Render engagement stats for a result card."""
     stats = get_engagement_stats(result)
-    show_missing = result.entity_type == "post"
-    exclude = (
-        frozenset({"saves"})
-        if result.platform == "facebook" and result.entity_type == "post"
-        else frozenset()
-    )
-    if not stats and not show_missing:
-        return ""
-    items = _stat_items_html(stats, show_missing=show_missing, exclude_keys=exclude)
+    if result.entity_type != "post":
+        items = _stat_items_html(stats, show_missing=False)
+        if not items:
+            return ""
+        return f'<div class="rro-card-stats">{"".join(items)}</div>'
+
+    # Facebook: never show Opgeslagen (not in Meta API).
+    # Missing expected metrics show as "n.b." (= nog niet opgehaald, niet 0).
+    if result.platform == "facebook":
+        exclude = frozenset({"saves"})
+        force_missing = frozenset({"views", "shares"})
+    else:
+        exclude = frozenset()
+        force_missing = frozenset({"views", "saves", "shares"})
+
+    items: list[str] = []
+    for key, icon, label in _STAT_DISPLAY_ORDER:
+        if key in exclude:
+            continue
+        if key in stats:
+            value_html = (
+                f'<span class="rro-stat-value-inline">'
+                f"{html.escape(str(stats[key]))}</span>"
+            )
+        elif key in force_missing:
+            value_html = _STAT_NOT_SYNCED
+        else:
+            continue
+        items.append(
+            '<span class="rro-stat">'
+            f"{icon}"
+            f'<span class="rro-stat-label-inline">{html.escape(label)}</span>'
+            f"{value_html}"
+            "</span>"
+        )
     if not items:
         return ""
     return f'<div class="rro-card-stats">{"".join(items)}</div>'
@@ -669,7 +715,10 @@ def _aggregate_engagement(results: list[SearchResult]) -> dict[str, int]:
 def _totals_html(results: list[SearchResult]) -> str:
     """Render engagement totals for the results section."""
     totals = _aggregate_engagement(results)
-    items = _stat_items_html(totals, show_missing=False)
+    # Opgeslagen is Instagram-only; hide from totals when no IG posts contribute.
+    post_platforms = {r.platform for r in results if r.entity_type == "post"}
+    exclude = frozenset({"saves"}) if "instagram" not in post_platforms else None
+    items = _stat_items_html(totals, show_missing=False, exclude_keys=exclude)
     if not items:
         return ""
     joined = ' <span class="rro-totals-sep">&middot;</span> '.join(items)
@@ -677,9 +726,7 @@ def _totals_html(results: list[SearchResult]) -> str:
     if "views" not in totals:
         note = (
             '<div class="rro-results-views-note">'
-            "Weergaven ontbreken: Meta Insights is nog niet gesynchroniseerd "
-            "(of de access token is verlopen). Vernieuw de token en run "
-            "<code>scripts/refresh_engagement.py</code>."
+            "<strong>n.b.</strong> = nog niet opgehaald uit Meta (niet hetzelfde als 0)."
             "</div>"
         )
     return f'<div class="rro-results-totals">Totaal engagement: {joined}</div>{note}'

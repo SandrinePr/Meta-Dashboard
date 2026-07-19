@@ -23,11 +23,13 @@ from ui.components import (
 logger = logging.getLogger(__name__)
 
 
-def _run_dashboard_sync():
-    """Run the same sync flow as `sync.py --all`."""
+def _run_dashboard_sync(progress=None):
+    """Fast Meta sync: all posts/likes, recent comments + Insights only."""
     load_dotenv(override=True)
     get_settings()
-    return run_sync(platform="all")
+    # Default is already fast mode (full=False); omit kwarg so a stale Streamlit
+    # process that hasn't reloaded orchestrator yet doesn't TypeError on `full`.
+    return run_sync(platform="all", progress=progress)
 
 
 def main() -> None:
@@ -52,30 +54,54 @@ def main() -> None:
         render_sidebar_stats(totals)
         render_sync_result(st.session_state.last_sync_stats)
 
-        if st.button("Synchroniseer Meta", type="primary", use_container_width=True):
-            with st.spinner("Meta-data synchroniseren..."):
-                try:
-                    stats = _run_dashboard_sync()
-                    st.session_state.last_sync_stats = stats
-                    logger.info(
-                        "Dashboard sync done: ig_posts+%s/%s ig_comments+%s/%s "
-                        "fb_posts+%s/%s fb_comments+%s/%s errors=%s",
-                        stats.instagram_posts_added,
-                        stats.instagram_posts_updated,
-                        stats.instagram_comments_added,
-                        stats.instagram_comments_updated,
-                        stats.facebook_posts_added,
-                        stats.facebook_posts_updated,
-                        stats.facebook_comments_added,
-                        stats.facebook_comments_updated,
-                        len(stats.errors),
+        sync_clicked = st.button(
+            "Synchroniseer Meta",
+            type="primary",
+            use_container_width=True,
+            disabled=st.session_state.get("sync_running", False),
+        )
+        if sync_clicked:
+            st.session_state.sync_running = True
+            progress_bar = st.progress(0.0, text="Sync starten…")
+            status = st.status("Meta synchroniseren…", expanded=True)
+
+            def on_progress(message: str, fraction: float | None = None) -> None:
+                status.write(message)
+                if fraction is not None:
+                    progress_bar.progress(
+                        min(max(fraction, 0.0), 1.0),
+                        text=message,
                     )
-                except Exception as exc:
-                    st.session_state.last_sync_stats = None
-                    st.error(f"Synchronisatie mislukt: {exc}")
-                    logger.exception("Dashboard sync failed")
-                else:
-                    st.rerun()
+
+            try:
+                stats = _run_dashboard_sync(progress=on_progress)
+                st.session_state.last_sync_stats = stats
+                status.update(label="Synchronisatie voltooid", state="complete")
+                progress_bar.progress(1.0, text="Klaar")
+                logger.info(
+                    "Dashboard sync done: ig_posts+%s/%s ig_comments+%s/%s "
+                    "fb_posts+%s/%s fb_comments+%s/%s insights_ok=%s insights_failed=%s "
+                    "errors=%s",
+                    stats.instagram_posts_added,
+                    stats.instagram_posts_updated,
+                    stats.instagram_comments_added,
+                    stats.instagram_comments_updated,
+                    stats.facebook_posts_added,
+                    stats.facebook_posts_updated,
+                    stats.facebook_comments_added,
+                    stats.facebook_comments_updated,
+                    stats.insights_ok,
+                    stats.insights_failed,
+                    len(stats.errors),
+                )
+            except Exception as exc:
+                st.session_state.last_sync_stats = None
+                status.update(label="Synchronisatie mislukt", state="error")
+                st.error(f"Synchronisatie mislukt: {exc}")
+                logger.exception("Dashboard sync failed")
+            finally:
+                st.session_state.sync_running = False
+            st.rerun()
 
     query, platforms, entity_types, date_range = render_search_form()
     trimmed = query.strip()

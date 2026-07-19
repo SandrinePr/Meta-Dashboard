@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
+from typing import Callable
 
 from config import get_settings
 from db.database import get_connection, initialize_database
@@ -22,7 +24,16 @@ from sync.mappers import (
     normalize_facebook_post,
     normalize_instagram_comment,
     normalize_instagram_post,
+    parse_published_at,
 )
+
+# Content lookback (~18 months). Fast sync only does extra API calls for recent items.
+LOOKBACK_DAYS = 548
+RECENT_COMMENTS_DAYS = 14
+RECENT_INSIGHTS_DAYS = 30
+COMMIT_EVERY = 50
+
+ProgressCallback = Callable[[str, float | None], None]
 
 
 @dataclass(slots=True)
@@ -35,6 +46,8 @@ class SyncStats:
     facebook_posts_updated: int = 0
     facebook_comments_added: int = 0
     facebook_comments_updated: int = 0
+    insights_ok: int = 0
+    insights_failed: int = 0
     errors: list[str] = field(default_factory=list)
 
     def merge(self, other: "SyncStats") -> None:
@@ -46,6 +59,8 @@ class SyncStats:
         self.facebook_posts_updated += other.facebook_posts_updated
         self.facebook_comments_added += other.facebook_comments_added
         self.facebook_comments_updated += other.facebook_comments_updated
+        self.insights_ok += other.insights_ok
+        self.insights_failed += other.insights_failed
         self.errors.extend(other.errors)
 
 
@@ -61,8 +76,53 @@ def _append_meta_sync_error(stats: SyncStats, context: str, exc: MetaClientError
         stats.errors.append(f"{context}: {message}")
 
 
-def sync_instagram(client: MetaClient) -> SyncStats:
-    """Sync Instagram media and comments."""
+def _emit(progress: ProgressCallback | None, message: str, fraction: float | None = None) -> None:
+    if progress is not None:
+        progress(message, fraction)
+
+
+def _lookback_since(days: int = LOOKBACK_DAYS) -> int:
+    return int((datetime.now(timezone.utc) - timedelta(days=days)).timestamp())
+
+
+def _is_within_days(published_at: str | None, days: int) -> bool:
+    if not published_at or days <= 0:
+        return False
+    try:
+        dt = datetime.fromisoformat(published_at.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    return dt.astimezone(timezone.utc) >= cutoff
+
+
+def _apply_instagram_insight_defaults(payload: dict) -> dict:
+    """Persist saves/shares as ints (incl. 0) when Insights succeeded but Meta omitted fields."""
+    enriched = dict(payload)
+    if "insights_views" not in enriched:
+        return enriched
+    if "saved_count" not in enriched:
+        if "insights_saved" in enriched:
+            enriched["saved_count"] = enriched["insights_saved"]
+        else:
+            enriched["saved_count"] = 0
+    if "shares_count" not in enriched:
+        enriched["shares_count"] = int(enriched.get("shares_count") or 0)
+    return enriched
+
+
+def sync_instagram(
+    client: MetaClient,
+    *,
+    progress: ProgressCallback | None = None,
+    lookback_days: int = LOOKBACK_DAYS,
+    full: bool = False,
+    phase_start: float = 0.0,
+    phase_end: float = 0.5,
+) -> SyncStats:
+    """Sync Instagram media. Fast mode skips old Insights/comments API calls."""
     settings = get_settings()
     stats = SyncStats()
     ig_account_id = settings.meta_instagram_business_account_id
@@ -75,6 +135,14 @@ def sync_instagram(client: MetaClient) -> SyncStats:
         stats.errors.append("META_PAGE_ACCESS_TOKEN ontbreekt.")
         return stats
 
+    since_ts = _lookback_since(lookback_days)
+    mode_label = "volledig" if full else "snel"
+    _emit(
+        progress,
+        f"Instagram ({mode_label}): media ophalen (laatste {lookback_days} dagen)…",
+        phase_start,
+    )
+
     with get_connection() as conn:
         account_id = upsert_account(
             conn,
@@ -84,20 +152,38 @@ def sync_instagram(client: MetaClient) -> SyncStats:
         )
 
         try:
-            media_items = client.get_instagram_media(ig_account_id)
+            media_items = client.get_instagram_media(ig_account_id, since=since_ts)
         except MetaClientError as exc:
             _append_meta_sync_error(stats, "Instagram media ophalen mislukt", exc)
             conn.commit()
             return stats
 
+        total = len(media_items)
+        _emit(
+            progress,
+            f"Instagram: {total} posts bijwerken…",
+            phase_start + 0.02,
+        )
+
         insights_failures = 0
         insights_stopped = False
-        for raw_post in media_items:
+        for idx, raw_post in enumerate(media_items, start=1):
+            fraction = phase_start + (phase_end - phase_start) * (idx / max(total, 1))
+            if idx == 1 or idx % 25 == 0 or idx == total:
+                _emit(progress, f"Instagram: post {idx}/{total}", fraction)
+
+            published_preview = parse_published_at(raw_post.get("timestamp"))
+            fetch_insights = full or _is_within_days(
+                published_preview, RECENT_INSIGHTS_DAYS
+            )
+
             media_id = str(raw_post.get("id") or "")
-            if media_id and not insights_stopped:
+            if media_id and fetch_insights and not insights_stopped:
                 try:
                     insights = client.get_instagram_media_insights(media_id)
                     raw_post = flatten_instagram_insights(raw_post, insights)
+                    raw_post = _apply_instagram_insight_defaults(raw_post)
+                    stats.insights_ok += 1
                 except MetaClientError as exc:
                     if getattr(exc, "error_code", None) == 190:
                         insights_stopped = True
@@ -108,6 +194,7 @@ def sync_instagram(client: MetaClient) -> SyncStats:
                         )
                     else:
                         insights_failures += 1
+                        stats.insights_failed += 1
 
             post_data = normalize_instagram_post(raw_post)
             if not post_data["external_id"]:
@@ -147,6 +234,16 @@ def sync_instagram(client: MetaClient) -> SyncStats:
                 thumbnail_url=post_data["thumbnail_url"],
             )
 
+            fetch_comments = (
+                full
+                or result.created
+                or _is_within_days(post_data["published_at"], RECENT_COMMENTS_DAYS)
+            )
+            if not fetch_comments:
+                if idx % COMMIT_EVERY == 0:
+                    conn.commit()
+                continue
+
             try:
                 raw_comments = client.get_instagram_comments(post_data["external_id"])
             except MetaClientError as exc:
@@ -155,6 +252,8 @@ def sync_instagram(client: MetaClient) -> SyncStats:
                     f"Instagram comments voor media {post_data['external_id']} mislukt",
                     exc,
                 )
+                if idx % COMMIT_EVERY == 0:
+                    conn.commit()
                 continue
 
             for raw_comment in raw_comments:
@@ -190,6 +289,9 @@ def sync_instagram(client: MetaClient) -> SyncStats:
                     thumbnail_url=post_data["thumbnail_url"],
                 )
 
+            if idx % COMMIT_EVERY == 0:
+                conn.commit()
+
         if insights_failures:
             stats.errors.append(
                 f"Instagram weergaven (insights) mislukt voor {insights_failures} media-items."
@@ -200,8 +302,16 @@ def sync_instagram(client: MetaClient) -> SyncStats:
     return stats
 
 
-def sync_facebook(client: MetaClient) -> SyncStats:
-    """Sync Facebook page posts and comments."""
+def sync_facebook(
+    client: MetaClient,
+    *,
+    progress: ProgressCallback | None = None,
+    lookback_days: int = LOOKBACK_DAYS,
+    full: bool = False,
+    phase_start: float = 0.5,
+    phase_end: float = 0.95,
+) -> SyncStats:
+    """Sync Facebook page posts. Fast mode skips old Insights/comments API calls."""
     settings = get_settings()
     stats = SyncStats()
     page_id = settings.meta_page_id
@@ -213,6 +323,14 @@ def sync_facebook(client: MetaClient) -> SyncStats:
         stats.errors.append("META_PAGE_ACCESS_TOKEN ontbreekt.")
         return stats
 
+    since_ts = _lookback_since(lookback_days)
+    mode_label = "volledig" if full else "snel"
+    _emit(
+        progress,
+        f"Facebook ({mode_label}): posts ophalen (laatste {lookback_days} dagen)…",
+        phase_start,
+    )
+
     with get_connection() as conn:
         account_id = upsert_account(
             conn,
@@ -222,20 +340,37 @@ def sync_facebook(client: MetaClient) -> SyncStats:
         )
 
         try:
-            posts = client.get_facebook_page_posts(page_id)
+            posts = client.get_facebook_page_posts(page_id, since=since_ts)
         except MetaClientError as exc:
             _append_meta_sync_error(stats, "Facebook posts ophalen mislukt", exc)
             conn.commit()
             return stats
 
+        total = len(posts)
+        _emit(
+            progress,
+            f"Facebook: {total} posts bijwerken…",
+            phase_start + 0.02,
+        )
+
         insights_failures = 0
         insights_stopped = False
-        for raw_post in posts:
+        for idx, raw_post in enumerate(posts, start=1):
+            fraction = phase_start + (phase_end - phase_start) * (idx / max(total, 1))
+            if idx == 1 or idx % 25 == 0 or idx == total:
+                _emit(progress, f"Facebook: post {idx}/{total}", fraction)
+
+            published_preview = parse_published_at(raw_post.get("created_time"))
+            fetch_insights = full or _is_within_days(
+                published_preview, RECENT_INSIGHTS_DAYS
+            )
+
             post_id = str(raw_post.get("id") or "")
-            if post_id and not insights_stopped:
+            if post_id and fetch_insights and not insights_stopped:
                 try:
                     insights = client.get_facebook_post_insights(post_id)
                     raw_post = flatten_facebook_insights(raw_post, insights)
+                    stats.insights_ok += 1
                 except MetaClientError as exc:
                     if getattr(exc, "error_code", None) == 190:
                         insights_stopped = True
@@ -246,6 +381,7 @@ def sync_facebook(client: MetaClient) -> SyncStats:
                         )
                     else:
                         insights_failures += 1
+                        stats.insights_failed += 1
 
             post_data = normalize_facebook_post(raw_post)
             if not post_data["external_id"]:
@@ -285,6 +421,16 @@ def sync_facebook(client: MetaClient) -> SyncStats:
                 thumbnail_url=post_data["thumbnail_url"],
             )
 
+            fetch_comments = (
+                full
+                or result.created
+                or _is_within_days(post_data["published_at"], RECENT_COMMENTS_DAYS)
+            )
+            if not fetch_comments:
+                if idx % COMMIT_EVERY == 0:
+                    conn.commit()
+                continue
+
             try:
                 raw_comments = client.get_facebook_comments(post_data["external_id"])
             except MetaClientError as exc:
@@ -293,6 +439,8 @@ def sync_facebook(client: MetaClient) -> SyncStats:
                     f"Facebook comments voor post {post_data['external_id']} mislukt",
                     exc,
                 )
+                if idx % COMMIT_EVERY == 0:
+                    conn.commit()
                 continue
 
             for raw_comment in raw_comments:
@@ -328,6 +476,9 @@ def sync_facebook(client: MetaClient) -> SyncStats:
                     thumbnail_url=post_data["thumbnail_url"],
                 )
 
+            if idx % COMMIT_EVERY == 0:
+                conn.commit()
+
         if insights_failures:
             stats.errors.append(
                 f"Facebook weergaven (insights) mislukt voor {insights_failures} posts."
@@ -338,21 +489,62 @@ def sync_facebook(client: MetaClient) -> SyncStats:
     return stats
 
 
-def run_sync(platform: str = "all") -> SyncStats:
-    """Run sync for instagram, facebook, or all platforms."""
+def run_sync(
+    platform: str = "all",
+    *,
+    progress: ProgressCallback | None = None,
+    lookback_days: int = LOOKBACK_DAYS,
+    full: bool = False,
+) -> SyncStats:
+    """Run sync for instagram, facebook, or all platforms.
+
+    Fast mode (default): updates all posts/likes in the lookback window, but only
+    fetches Insights for the last ~30 days and comments for new/recent (~14 days)
+    posts. Use full=True for exhaustive Insights+comments on every post.
+    """
     initialize_database()
     client = MetaClient.from_settings()
     stats = SyncStats()
 
-    if platform in {"instagram", "all"}:
-        stats.merge(sync_instagram(client))
-    if platform in {"facebook", "all"}:
-        stats.merge(sync_facebook(client))
+    do_ig = platform in {"instagram", "all"}
+    do_fb = platform in {"facebook", "all"}
 
+    if do_ig and do_fb:
+        ig_start, ig_end, fb_start, fb_end = 0.0, 0.48, 0.48, 0.95
+    elif do_ig:
+        ig_start, ig_end, fb_start, fb_end = 0.0, 0.95, 0.0, 0.0
+    else:
+        ig_start, ig_end, fb_start, fb_end = 0.0, 0.0, 0.0, 0.95
+
+    if do_ig:
+        stats.merge(
+            sync_instagram(
+                client,
+                progress=progress,
+                lookback_days=lookback_days,
+                full=full,
+                phase_start=ig_start,
+                phase_end=ig_end,
+            )
+        )
+    if do_fb:
+        stats.merge(
+            sync_facebook(
+                client,
+                progress=progress,
+                lookback_days=lookback_days,
+                full=full,
+                phase_start=fb_start,
+                phase_end=fb_end,
+            )
+        )
+
+    _emit(progress, "Zoekindex opnieuw opbouwen…", 0.97)
     with get_connection() as conn:
         rebuild_search_index(conn)
         conn.commit()
 
+    _emit(progress, "Synchronisatie voltooid.", 1.0)
     return stats
 
 

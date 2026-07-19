@@ -203,6 +203,28 @@ section[data-testid="stSidebar"] .stButton > button p {
     font-size: 1rem;
 }
 
+.rro-sync-metrics-note {
+    margin: 0.85rem 0 1rem 0;
+    padding: 10px 11px;
+    border-radius: 10px;
+    border: 1px solid rgba(184, 120, 68, 0.35);
+    background: rgba(184, 120, 68, 0.1);
+    color: var(--rro-text-muted);
+    font-size: 0.8rem;
+    line-height: 1.45;
+}
+
+.rro-sync-metrics-note strong {
+    color: var(--rro-text);
+    font-weight: 700;
+}
+
+.rro-sync-metrics-note code {
+    color: var(--rro-cta);
+    font-size: 0.78rem;
+    word-break: break-all;
+}
+
 /* Search panel card (wraps everything under the Zoeken header) */
 [data-testid="stMain"] [data-testid="stVerticalBlock"]:has(.rro-search-form-header) {
     background: linear-gradient(
@@ -743,8 +765,9 @@ div[data-baseweb="menu"] li[aria-selected="true"] {
 
 .rro-stat-missing {
     color: var(--rro-text-muted) !important;
-    font-weight: 600 !important;
+    font-weight: 500 !important;
     font-style: italic;
+    font-size: 0.82em;
 }
 
 .rro-results-views-note {
