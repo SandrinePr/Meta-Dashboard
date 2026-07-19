@@ -23,9 +23,12 @@ def get_connection(db_path: Path | None = None) -> sqlite3.Connection:
     resolved_path = db_path or settings.database_path
     resolved_path.parent.mkdir(parents=True, exist_ok=True)
 
-    conn = sqlite3.connect(resolved_path)
+    # busy_timeout avoids hanging forever when another process (e.g. refresh_engagement)
+    # holds a write lock on the same DB.
+    conn = sqlite3.connect(resolved_path, timeout=60)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON;")
+    conn.execute("PRAGMA busy_timeout = 60000;")
     return conn
 
 

@@ -379,6 +379,8 @@ def extract_post_stats(platform: str, raw_json: str | None) -> dict[str, int]:
                 if key in insight_metrics:
                     stats["views"] = insight_metrics[key]
                     break
+        # Facebook Graph API does not expose post saves — never surface them.
+        stats.pop("saves", None)
 
     return stats
 

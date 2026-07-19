@@ -17,6 +17,11 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["instagram", "facebook"],
         help="Sync one platform.",
     )
+    parser.add_argument(
+        "--full",
+        action="store_true",
+        help="Volledige sync: Insights + comments voor alle posts (veel trager).",
+    )
     return parser
 
 
@@ -31,6 +36,8 @@ def _print_stats(stats) -> None:
     print(f"  Facebook posts bijgewerkt  : {stats.facebook_posts_updated}")
     print(f"  Facebook comments toegevoegd : {stats.facebook_comments_added}")
     print(f"  Facebook comments bijgewerkt : {stats.facebook_comments_updated}")
+    print(f"  Insights bijgewerkt          : {stats.insights_ok}")
+    print(f"  Insights mislukt             : {stats.insights_failed}")
     print("\nTotaal in database:")
     print(f"  Instagram posts   : {totals['instagram_posts']}")
     print(f"  Instagram comments: {totals['instagram_comments']}")
@@ -49,7 +56,7 @@ def main() -> None:
     platform = "all" if args.all else args.platform
 
     try:
-        stats = run_sync(platform)
+        stats = run_sync(platform, full=args.full)
         _print_stats(stats)
         if stats.errors:
             raise SystemExit(1)

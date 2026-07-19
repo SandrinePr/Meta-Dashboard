@@ -42,10 +42,13 @@ def test_extract_facebook_stats_from_summaries() -> None:
             "likes": {"summary": {"total_count": 20}},
             "comments": {"summary": {"total_count": 7}},
             "shares": {"count": 3},
+            "insights_saved": 99,
+            "saved_count": 99,
         }
     )
     stats = extract_post_stats("facebook", raw)
     assert stats == {"likes": 20, "comments": 7, "shares": 3}
+    assert "saves" not in stats
 
 
 def test_extract_facebook_prefers_reactions_over_likes() -> None:
