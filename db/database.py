@@ -80,13 +80,28 @@ def ensure_seed_database(db_path: Path | None = None) -> bool:
         effective_db_path.exists()
         and SEED_DB_PATH.stat().st_mtime > effective_db_path.stat().st_mtime
     )
-    if runtime_empty or seed_newer:
+    # mtime alone fails on Render persistent disks: runtime keeps getting written,
+    # so a newly deployed seed can look "older" even when content changed.
+    seed_content_changed = False
+    if effective_db_path.exists() and not runtime_empty:
+        seed_content_changed = (
+            _post_count(SEED_DB_PATH) != _post_count(effective_db_path)
+            or SEED_DB_PATH.stat().st_size != effective_db_path.stat().st_size
+        )
+    if runtime_empty or seed_newer or seed_content_changed:
+        reason = (
+            "empty"
+            if runtime_empty
+            else "seed_newer"
+            if seed_newer
+            else "seed_content_changed"
+        )
         shutil.copy2(SEED_DB_PATH, effective_db_path)
         logger.info(
             "Seeded runtime database from %s (%s posts, reason=%s)",
             SEED_DB_PATH,
             _post_count(effective_db_path),
-            "empty" if runtime_empty else "seed_newer",
+            reason,
         )
         seeded = True
 
