@@ -315,6 +315,7 @@ def render_sidebar_stats(totals: dict) -> None:
         '<div class="rro-sync-metrics-note">'
         "<strong>n.b.</strong> = nog niet opgehaald uit Meta "
         "(niet hetzelfde als 0). "
+        "Data betreft alleen de afgelopen 1,5 jaar."
         "</div>",
         unsafe_allow_html=True,
     )
