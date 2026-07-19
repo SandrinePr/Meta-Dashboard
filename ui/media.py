@@ -196,14 +196,18 @@ def get_image_for_search_result(result) -> tuple[str | None, str]:
     if not row:
         return resolve_display_image_url(search_index_thumbnail=result.thumbnail_url)
 
-    prefer_thumbnail = (row["platform"] or "") == "facebook"
+    # Facebook CDN URLs expire / return 403 quickly. Without a local cache file,
+    # returning those URLs only shows a broken image — prefer a clean placeholder.
+    if (row["platform"] or "") == "facebook":
+        return None, "no_local_cache"
+
     return resolve_display_image_url(
         search_index_thumbnail=result.thumbnail_url,
         thumbnail_url=row["thumbnail_url"],
         media_url=row["media_url"],
         media_type=row["media_type"],
         raw_json=row["raw_json"],
-        prefer_thumbnail=prefer_thumbnail,
+        prefer_thumbnail=False,
     )
 
 
@@ -509,12 +513,14 @@ def get_image_for_entity(entity_type: str, entity_id: int) -> tuple[str | None, 
             local_uri = local_media_data_uri(int(row["id"]))
             if local_uri:
                 return local_uri, "local_cache"
+            if (row["platform"] or "") == "facebook":
+                return None, "no_local_cache"
             return resolve_display_image_url(
                 thumbnail_url=row["thumbnail_url"],
                 media_url=row["media_url"],
                 media_type=row["media_type"],
                 raw_json=row["raw_json"],
-                prefer_thumbnail=(row["platform"] or "") == "facebook",
+                prefer_thumbnail=False,
             )
 
         row = conn.execute(
@@ -537,10 +543,12 @@ def get_image_for_entity(entity_type: str, entity_id: int) -> tuple[str | None, 
         local_uri = local_media_data_uri(int(row["id"]))
         if local_uri:
             return local_uri, "local_cache"
+        if (row["platform"] or "") == "facebook":
+            return None, "no_local_cache"
         return resolve_display_image_url(
             thumbnail_url=row["thumbnail_url"],
             media_url=row["media_url"],
             media_type=row["media_type"],
             raw_json=row["raw_json"],
-            prefer_thumbnail=(row["platform"] or "") == "facebook",
+            prefer_thumbnail=False,
         )
