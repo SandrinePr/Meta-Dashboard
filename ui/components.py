@@ -15,6 +15,7 @@ from search.engine import (
     DEFAULT_FILTER_TYPES,
     SearchResult,
     detect_match_types,
+    matches_hashtag_query as engine_matches_hashtag_query,
     normalize_search_term,
     result_membership_types,
 )
@@ -170,10 +171,7 @@ def highlight_and_snippet(text: str | None, query: str = "") -> str:
 
 def matches_hashtag_query(result: SearchResult, query: str) -> bool:
     """Return True when the search term matches one of the post hashtags."""
-    term = normalize_search_term(query).lower()
-    if not term:
-        return False
-    return any(tag.lower() == term for tag in result.hashtags)
+    return engine_matches_hashtag_query(result, query)
 
 
 def inject_styles() -> None:
