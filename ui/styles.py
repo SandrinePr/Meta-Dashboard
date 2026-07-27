@@ -707,10 +707,11 @@ div[data-baseweb="menu"] li[aria-selected="true"] {
     border: 1px solid var(--rro-border);
     border-left: 2px solid var(--rro-cta);
     border-radius: var(--rro-radius-sm);
-    padding: 10px 12px;
+    padding: 10px 12px 14px;
     margin-bottom: 10px;
     box-shadow: none;
     transition: border-color 0.15s ease;
+    overflow: visible;
 }
 
 .rro-comment-card:hover {
@@ -771,20 +772,83 @@ div[data-baseweb="menu"] li[aria-selected="true"] {
     text-decoration: underline;
 }
 
-/* Resultaatkaarten: compact, horizontaal, dark navy */
+/* Resultaatkaarten: compact, horizontaal, dark navy (Streamlit columns + marker) */
+.rro-result-card-marker {
+    display: none !important;
+}
+
+div[data-testid="stVerticalBlock"]:has(> div .rro-result-card-marker) {
+    background: var(--rro-card) !important;
+    border: 1px solid var(--rro-border) !important;
+    border-radius: var(--rro-radius) !important;
+    padding: 12px 12px 18px !important;
+    margin: 0 0 12px 0 !important;
+    transition: border-color 0.15s ease;
+    overflow: visible !important;
+}
+
+div[data-testid="stVerticalBlock"]:has(> div .rro-result-card-marker):hover {
+    border-color: var(--rro-stroke) !important;
+}
+
+div[data-testid="stVerticalBlock"]:has(> div .rro-result-card-marker)
+    [data-testid="stHorizontalBlock"] {
+    align-items: flex-start !important;
+    gap: 0.75rem !important;
+    overflow: visible !important;
+}
+
+div[data-testid="stVerticalBlock"]:has(> div .rro-result-card-marker)
+    [data-testid="column"],
+div[data-testid="stVerticalBlock"]:has(> div .rro-result-card-marker)
+    [data-testid="stMarkdown"],
+div[data-testid="stVerticalBlock"]:has(> div .rro-result-card-marker)
+    [data-testid="stMarkdownContainer"],
+div[data-testid="stVerticalBlock"]:has(> div .rro-result-card-marker)
+    [data-testid="stElementContainer"],
+div[data-testid="stVerticalBlock"]:has(> div .rro-result-card-marker)
+    [data-testid="stVerticalBlockBorderWrapper"] {
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+}
+
+div[data-testid="stVerticalBlock"]:has(> div .rro-result-card-marker)
+    [data-testid="stImage"] {
+    margin: 0 !important;
+}
+
+div[data-testid="stVerticalBlock"]:has(> div .rro-result-card-marker)
+    [data-testid="stImage"] img {
+    width: 88px !important;
+    height: 88px !important;
+    max-width: 88px !important;
+    object-fit: cover !important;
+    border-radius: var(--rro-radius-sm) !important;
+    border: 1px solid var(--rro-border) !important;
+    background: var(--rro-input);
+}
+
+div[data-testid="stVerticalBlock"]:has(> div .rro-result-card-marker):hover
+    [data-testid="stImage"] img,
+div[data-testid="stVerticalBlock"]:has(> div .rro-result-card-marker):hover
+    .rro-thumb-placeholder {
+    border-color: var(--rro-stroke) !important;
+}
+
 .rro-result-card {
     display: grid;
     grid-template-columns: 88px 1fr 120px;
     gap: 12px;
-    align-items: center;
+    align-items: start;
     background: var(--rro-card);
     border: 1px solid var(--rro-border);
     border-radius: var(--rro-radius);
-    padding: 12px;
-    margin-bottom: 10px;
+    padding: 12px 12px 18px;
+    margin-bottom: 12px;
     box-shadow: none;
     transition: border-color 0.15s ease;
-    overflow: hidden;
+    overflow: visible;
 }
 
 .rro-result-card:hover {
@@ -908,23 +972,49 @@ div[data-baseweb="menu"] li[aria-selected="true"] {
     word-break: break-word;
 }
 
+.rro-card-stats-wrap {
+    display: block !important;
+    width: 100% !important;
+    padding: 0 0 2px 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+}
+
 .rro-card-stats {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px 10px;
-    margin-top: 8px;
-    padding: 7px 9px;
-    color: var(--rro-text-muted);
-    font-size: 0.78rem;
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid var(--rro-border);
-    border-radius: var(--rro-radius-sm);
+    display: flex !important;
+    flex-wrap: wrap !important;
+    align-items: center !important;
+    gap: 8px 14px !important;
+    margin: 10px 0 0 0 !important;
+    padding: 10px 12px 12px !important;
+    color: var(--rro-text-muted) !important;
+    font-size: 0.78rem !important;
+    line-height: 1.45 !important;
+    background: rgba(255, 255, 255, 0.03) !important;
+    border: 1px solid var(--rro-border) !important;
+    border-radius: var(--rro-radius-sm) !important;
+    overflow: visible !important;
+    min-height: auto !important;
+    height: auto !important;
+    max-height: none !important;
+    box-sizing: border-box !important;
+}
+
+.rro-card-stats-spacer {
+    display: block !important;
+    height: 10px !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    flex-shrink: 0 !important;
 }
 
 .rro-stat {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 4px !important;
+    white-space: nowrap !important;
+    line-height: 1.35 !important;
 }
 
 .rro-stat-svg {
