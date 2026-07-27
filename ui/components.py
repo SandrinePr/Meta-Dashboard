@@ -178,6 +178,35 @@ def matches_hashtag_query(result: SearchResult, query: str) -> bool:
 def inject_styles() -> None:
     """Inject global RRO theme CSS and mobile sidebar click-outside close."""
     st.markdown(RRO_CSS, unsafe_allow_html=True)
+    # Force top spacing into parent document — Streamlit emotion CSS can ignore
+    # margin on .block-container; padding-top on [data-testid="stMain"] sticks.
+    components.html(
+        """
+        <script>
+        (function () {
+          const doc = window.parent.document;
+          const STYLE_ID = "rro-top-spacing-v2";
+          let el = doc.getElementById(STYLE_ID);
+          if (!el) {
+            el = doc.createElement("style");
+            el.id = STYLE_ID;
+            doc.head.appendChild(el);
+          }
+          el.textContent = `
+            section.main[data-testid="stMain"],
+            [data-testid="stMain"] {
+              padding-top: 5rem !important;
+            }
+            div.stMainBlockContainer.block-container,
+            [data-testid="stMain"] .block-container {
+              margin-top: 0 !important;
+            }
+          `;
+        })();
+        </script>
+        """,
+        height=0,
+    )
     components.html(
         """
         <script>

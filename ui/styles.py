@@ -18,8 +18,8 @@ RRO_CSS = """
     --rro-text-muted: rgba(242, 240, 236, 0.62);
     --rro-border: rgba(242, 240, 236, 0.12);
     --rro-border-accent: rgba(184, 120, 68, 0.45);
-    /* Celine: hover/focus = stroke, geen extra balk */
-    --rro-stroke: #4C9BE8;
+    /* Hover/focus: warme stroke, geen lichtblauw */
+    --rro-stroke: var(--rro-cta);
     --rro-shadow: 0 4px 18px rgba(0, 0, 0, 0.28);
     --rro-highlight: #B87844;
     --rro-cyan: #57C7E3;
@@ -39,16 +39,50 @@ html, body, [class*="css"] {
     overflow-x: hidden;
 }
 
-/* Hoofdkaart: ~800px, gecentreerd, groeit mee met resultaten */
-[data-testid="stMain"] .block-container {
+/* Streamlit topbar: transparant, geen toolbar — ruimte komt via padding hieronder */
+[data-testid="stHeader"] {
+    background: transparent !important;
+}
+
+[data-testid="stToolbar"],
+[data-testid="stDecoration"],
+[data-testid="stStatusWidget"] {
+    display: none !important;
+}
+
+/* 5rem ruimte boven de hoofdkaart (padding, niet margin — margin wordt door Streamlit weggedrukt) */
+section.main[data-testid="stMain"],
+[data-testid="stMain"] {
+    padding-top: 5rem !important;
+}
+
+div.stMainBlockContainer.block-container,
+[data-testid="stMain"] div.block-container,
+[data-testid="stMain"] .stMainBlockContainer.block-container,
+section.main .block-container {
     max-width: 800px !important;
     margin-left: auto !important;
     margin-right: auto !important;
-    padding: 1.1rem 1.15rem 1.25rem !important;
-    background: var(--rro-panel);
-    border: 1px solid var(--rro-border);
-    border-radius: 16px;
-    box-shadow: var(--rro-shadow);
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+    padding: 0.65rem 1.1rem 1rem !important;
+    background: var(--rro-panel) !important;
+    border: 1px solid var(--rro-border) !important;
+    border-radius: 16px !important;
+    box-shadow: var(--rro-shadow) !important;
+}
+
+/* Compacte verticale ritme in de hoofdkaart */
+[data-testid="stMain"] .block-container > div {
+    gap: 0.35rem !important;
+}
+
+[data-testid="stMain"] [data-testid="stVerticalBlock"] {
+    gap: 0.35rem !important;
+}
+
+[data-testid="stMain"] [data-testid="stElementContainer"] {
+    margin-bottom: 0 !important;
 }
 
 h1,
@@ -58,11 +92,36 @@ h1,
     letter-spacing: -0.02em;
     line-height: 1.15 !important;
     color: var(--rro-text) !important;
-    margin: 0 0 0.15rem 0 !important;
+    margin: 0 0 0.1rem 0 !important;
+    padding: 0 !important;
+    background: transparent !important;
+}
+
+.rro-page-title:hover,
+h1:hover {
+    background: transparent !important;
+    color: var(--rro-text) !important;
 }
 
 [data-testid="stMain"] .stCaption {
-    margin-bottom: 0.75rem !important;
+    margin: 0 0 0.35rem 0 !important;
+    padding: 0 !important;
+}
+
+/* Geen Streamlit/Baseweb lichtblauwe focus/hover glows */
+.stApp *:focus,
+.stApp *:focus-visible,
+.stApp input:focus,
+.stApp button:focus,
+.stApp [data-baseweb="input"]:focus-within,
+.stApp [data-baseweb="select"]:focus-within {
+    outline: none !important;
+    box-shadow: none !important;
+}
+
+.stApp a:hover,
+.stApp a:focus {
+    background: transparent !important;
 }
 
 h2, h3, h4, h5, h6, p, label, span, div {
@@ -144,10 +203,20 @@ section[data-testid="stSidebar"] {
         padding-top: 48px !important;
     }
 
-    [data-testid="stMain"] .block-container {
+    [data-testid="stMain"] .block-container,
+    [data-testid="stMain"] .stMainBlockContainer.block-container,
+    section.main .block-container {
         max-width: calc(100% - 1rem) !important;
-        margin: 0.5rem auto !important;
-        padding: 0.9rem !important;
+        margin-top: 0 !important;
+        margin-left: auto !important;
+        margin-right: auto !important;
+        margin-bottom: 0.25rem !important;
+        padding: 0.55rem 0.85rem 0.85rem !important;
+    }
+
+    section.main[data-testid="stMain"],
+    [data-testid="stMain"] {
+        padding-top: 5rem !important;
     }
 }
 
@@ -175,8 +244,8 @@ section[data-testid="stSidebar"] .stButton > button {
 }
 
 section[data-testid="stSidebar"] .stButton > button:hover {
-    background: var(--rro-cta) !important;
-    border-color: var(--rro-stroke) !important;
+    background: var(--rro-cta-hover) !important;
+    border-color: var(--rro-cta-hover) !important;
     color: #FFFFFF !important;
 }
 
@@ -270,7 +339,7 @@ section[data-testid="stSidebar"] .stButton > button p {
 }
 
 .rro-search-form-header h3 {
-    margin: 0 0 0.55rem 0;
+    margin: 0 0 0.3rem 0;
     font-size: 1.05rem;
     font-weight: 700;
     color: var(--rro-text);
@@ -348,14 +417,15 @@ div[data-testid="stForm"] input[type="text"] {
     line-height: var(--rro-control-h) !important;
 }
 
-/* Celine: geen extra balk — alleen stroke als hover/focus */
+/* Celine: geen extra balk — alleen warme stroke als hover/focus */
 .stTextInput input:hover,
 div[data-testid="stTextInput"] input:hover,
 .stTextInput input:focus,
 div[data-testid="stTextInput"] input:focus {
-    border-color: var(--rro-stroke) !important;
+    border-color: var(--rro-cta) !important;
     box-shadow: none !important;
     outline: none !important;
+    background: var(--rro-input) !important;
 }
 
 div[data-testid="stTextInput"] [data-testid="stTextInputRootElement"],
@@ -446,8 +516,9 @@ div[data-testid="stDateInput"] [data-baseweb="input"] {
 div[data-testid="stDateInput"] [data-baseweb="input"]:hover,
 div[data-testid="stDateInput"] [data-baseweb="input"]:focus-within,
 div[data-testid="stDateInput"]:hover [data-baseweb="input"] {
-    border-color: var(--rro-stroke) !important;
+    border-color: var(--rro-cta) !important;
     box-shadow: none !important;
+    background: var(--rro-input) !important;
 }
 
 div[data-testid="stDateInput"] input {
@@ -476,7 +547,7 @@ div[data-testid="stDateInput"] svg {
     fill: var(--rro-text-muted) !important;
 }
 
-/* Zoeken-knop naast zoekveld: oranje, hover = lichte stroke */
+/* Zoeken-knop naast zoekveld: oranje, hover = iets donkerder oranje */
 .rro-search-submit + div .stButton > button,
 [data-testid="stHorizontalBlock"]:has(.rro-search-submit) .stButton > button,
 .stButton > button {
@@ -493,11 +564,14 @@ div[data-testid="stDateInput"] svg {
 }
 
 .stButton > button:hover,
-[data-testid="stHorizontalBlock"]:has(.rro-search-submit) .stButton > button:hover {
-    background: var(--rro-cta) !important;
-    border-color: var(--rro-stroke) !important;
+[data-testid="stHorizontalBlock"]:has(.rro-search-submit) .stButton > button:hover,
+.stButton > button:focus,
+.stButton > button:focus-visible {
+    background: var(--rro-cta-hover) !important;
+    border-color: var(--rro-cta-hover) !important;
     color: #FFFFFF !important;
     box-shadow: none !important;
+    outline: none !important;
 }
 
 .stButton > button p {
@@ -532,8 +606,9 @@ div[data-testid="stDateInput"] svg {
 [data-testid="stMultiSelect"] div[data-baseweb="select"] > div:hover,
 [data-testid="stMultiSelect"] div[data-baseweb="select"]:hover > div,
 [data-testid="stMultiSelect"] div[data-baseweb="select"] > div[aria-expanded="true"] {
-    border-color: var(--rro-stroke) !important;
+    border-color: var(--rro-cta) !important;
     box-shadow: none !important;
+    background-color: var(--rro-input) !important;
 }
 
 [data-testid="stMultiSelect"] span[data-baseweb="tag"] {
@@ -622,21 +697,21 @@ div[data-baseweb="menu"] li[aria-selected="true"] {
     border: none !important;
     box-shadow: none !important;
     padding: 0 !important;
-    margin: 0.75rem 0 0 0 !important;
+    margin: 0.35rem 0 0 0 !important;
 }
 
 .rro-results-section {
-    padding: 0.35rem 0 0;
+    padding: 0.25rem 0 0;
     border-top: 1px solid var(--rro-border);
-    margin-top: 0.85rem;
+    margin-top: 0.4rem;
 }
 
 .rro-results-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin: 0.55rem 0 0.5rem 0;
-    padding-bottom: 0.45rem;
+    margin: 0.35rem 0 0.35rem 0;
+    padding-bottom: 0.3rem;
     border-bottom: 1px solid var(--rro-border);
 }
 
@@ -655,7 +730,7 @@ div[data-baseweb="menu"] li[aria-selected="true"] {
     color: var(--rro-text-muted);
     font-size: 0.82rem;
     font-weight: 600;
-    margin: 0 0 0.75rem 0;
+    margin: 0 0 0.45rem 0;
     padding: 8px 10px;
     background: rgba(255, 255, 255, 0.03);
     border: 1px solid var(--rro-border);
@@ -715,7 +790,7 @@ div[data-baseweb="menu"] li[aria-selected="true"] {
 }
 
 .rro-comment-card:hover {
-    border-color: var(--rro-stroke);
+    border-color: var(--rro-cta);
 }
 
 .rro-comment-label {
@@ -788,7 +863,7 @@ div[data-testid="stVerticalBlock"]:has(> div .rro-result-card-marker) {
 }
 
 div[data-testid="stVerticalBlock"]:has(> div .rro-result-card-marker):hover {
-    border-color: var(--rro-stroke) !important;
+    border-color: var(--rro-cta) !important;
 }
 
 div[data-testid="stVerticalBlock"]:has(> div .rro-result-card-marker)
@@ -833,7 +908,7 @@ div[data-testid="stVerticalBlock"]:has(> div .rro-result-card-marker):hover
     [data-testid="stImage"] img,
 div[data-testid="stVerticalBlock"]:has(> div .rro-result-card-marker):hover
     .rro-thumb-placeholder {
-    border-color: var(--rro-stroke) !important;
+    border-color: var(--rro-cta) !important;
 }
 
 .rro-result-card {
@@ -852,7 +927,7 @@ div[data-testid="stVerticalBlock"]:has(> div .rro-result-card-marker):hover
 }
 
 .rro-result-card:hover {
-    border-color: var(--rro-stroke);
+    border-color: var(--rro-cta);
     box-shadow: none;
 }
 
@@ -868,7 +943,7 @@ div[data-testid="stVerticalBlock"]:has(> div .rro-result-card-marker):hover
 
 .rro-result-card:hover .rro-thumb,
 .rro-result-card:hover .rro-thumb-placeholder {
-    border-color: var(--rro-stroke);
+    border-color: var(--rro-cta);
 }
 
 .rro-thumb-placeholder {
@@ -1116,7 +1191,7 @@ div[data-testid="stVerticalBlock"]:has(> div .rro-result-card-marker):hover
 
 .rro-btn-link:hover {
     background: transparent;
-    border-color: var(--rro-stroke);
+    border-color: var(--rro-cta);
     color: var(--rro-text) !important;
 }
 
