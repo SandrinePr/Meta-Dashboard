@@ -37,6 +37,7 @@ from ui.media import (
     get_content_type_for_result,
     get_engagement_stats,
     get_image_for_search_result,
+    get_local_image_path_for_result,
 )
 from ui.styles import RRO_CSS
 
@@ -531,29 +532,23 @@ def _stats_html(result: SearchResult) -> str:
 
 
 def render_result_card(result: SearchResult, query: str = "") -> None:
-    """Render one search result card in RRO style."""
-    platform_label = "Instagram" if result.platform == "instagram" else "Facebook"
+    """Render one search result card in RRO style.
+
+    Thumbnails are shown via ``st.image`` from local files so Streamlit does not
+    strip/break large data-URI ``<img>`` tags inside markdown.
+    """
     highlighted_text = highlight_and_snippet(result.text, query)
     safe_date = html.escape(_format_date(result.published_at))
 
+    image_path = get_local_image_path_for_result(result)
     image_url, image_source = get_image_for_search_result(result)
     logger.debug(
-        "Result image entity=%s/%s url=%s source=%s",
+        "Result image entity=%s/%s path=%s source=%s",
         result.entity_type,
         result.entity_id,
-        image_url,
+        image_path or image_url,
         image_source,
     )
-
-    if image_url:
-        safe_thumb = html.escape(image_url, quote=True)
-        thumb_html = (
-            f'<img class="rro-thumb" src="{safe_thumb}" '
-            f'alt="{html.escape(platform_label)} thumbnail" '
-            f'onerror="this.outerHTML=\'<div class=&quot;rro-thumb-placeholder&quot;>Afbeelding niet beschikbaar</div>\';" />'
-        )
-    else:
-        thumb_html = '<div class="rro-thumb-placeholder">Geen thumbnail</div>'
 
     if result.permalink:
         safe_link = html.escape(result.permalink, quote=True)
@@ -571,19 +566,41 @@ def render_result_card(result: SearchResult, query: str = "") -> None:
         f"{_match_badges(result, query)}"
     )
     stats_html = _stats_html(result)
-    card_html = (
-        '<div class="rro-result-card">'
-        f"<div>{thumb_html}</div>"
-        "<div>"
+    body_html = (
         f'<div class="rro-card-badges">{badges_html}</div>'
         f'<div class="rro-card-date">{safe_date}</div>'
         f'<div class="rro-card-text">{highlighted_text}</div>'
-        f"{stats_html}"
-        "</div>"
-        f"<div>{action_html}</div>"
-        "</div>"
     )
-    st.markdown(card_html, unsafe_allow_html=True)
+
+    with st.container():
+        st.markdown(
+            '<div class="rro-result-card-marker" aria-hidden="true"></div>',
+            unsafe_allow_html=True,
+        )
+        thumb_col, body_col, action_col = st.columns([1.05, 4.2, 1.35], gap="small")
+        with thumb_col:
+            if image_path is not None:
+                st.image(str(image_path), use_container_width=True)
+            else:
+                st.markdown(
+                    '<div class="rro-thumb-placeholder">Geen thumbnail</div>',
+                    unsafe_allow_html=True,
+                )
+        with body_col:
+            st.markdown(body_html, unsafe_allow_html=True)
+        with action_col:
+            st.markdown(action_html, unsafe_allow_html=True)
+        # Stats full-width under the row so they are not clipped in a narrow column.
+        if stats_html:
+            st.markdown(
+                (
+                    '<div class="rro-card-stats-wrap">'
+                    f"{stats_html}"
+                    '<div class="rro-card-stats-spacer" aria-hidden="true"></div>'
+                    "</div>"
+                ),
+                unsafe_allow_html=True,
+            )
 
 
 def _comment_row_html(comment: SearchResult, query: str) -> str:

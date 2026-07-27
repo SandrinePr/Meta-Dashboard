@@ -165,13 +165,8 @@ def resolve_display_image_url(
     return None, "none"
 
 
-def get_image_for_search_result(result) -> tuple[str | None, str]:
-    """Resolve the best image URL for a search result card.
-
-    Only local cached files are used in the UI. Meta CDN URLs expire / return
-    403 quickly, and Streamlit sanitizes ``onerror`` so broken ``<img>`` tags
-    stay visible — better a clean placeholder than a broken icon.
-    """
+def get_local_image_path_for_result(result) -> Path | None:
+    """Return the local thumbnail path for a search result, if cached."""
     with get_connection() as conn:
         if result.entity_type == "post":
             post_id = result.entity_id
@@ -181,17 +176,25 @@ def get_image_for_search_result(result) -> tuple[str | None, str]:
                 (result.entity_id,),
             ).fetchone()
             post_id = int(row["post_id"]) if row and row["post_id"] is not None else None
+    if post_id is None:
+        return None
+    return local_media_path(int(post_id))
 
-    if post_id is not None:
-        local_uri = local_media_data_uri(int(post_id))
-        if local_uri:
-            return local_uri, "local_cache"
 
+def get_image_for_search_result(result) -> tuple[str | None, str]:
+    """Resolve the best image URL for a search result card.
+
+    Prefers a local file path (for ``st.image``). Falls back to a data URI only
+    when needed; Meta CDN URLs are never returned (they expire / 403).
+    """
+    path = get_local_image_path_for_result(result)
+    if path is not None:
+        return str(path), "local_cache"
     return None, "no_local_cache"
 
 
 def get_image_for_entity(entity_type: str, entity_id: int) -> tuple[str | None, str]:
-    """Load image URL for a search result entity from local cache only."""
+    """Load image path for a search result entity from local cache only."""
     with get_connection() as conn:
         if entity_type == "post":
             post_id = entity_id
@@ -204,9 +207,9 @@ def get_image_for_entity(entity_type: str, entity_id: int) -> tuple[str | None, 
                 return None, "none"
             post_id = int(row["post_id"])
 
-    local_uri = local_media_data_uri(post_id)
-    if local_uri:
-        return local_uri, "local_cache"
+    path = local_media_path(post_id)
+    if path is not None:
+        return str(path), "local_cache"
     return None, "no_local_cache"
 
 
