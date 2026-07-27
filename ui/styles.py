@@ -2,6 +2,7 @@
 
 RRO_CSS = """
 <style>
+/* rro-css-v5-totals-gap */
 @import url('https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&display=swap');
 
 :root {
@@ -92,9 +93,15 @@ h1,
     letter-spacing: -0.02em;
     line-height: 1.15 !important;
     color: var(--rro-text) !important;
-    margin: 0 0 0.1rem 0 !important;
+    margin: 0 0 8px 0 !important;
     padding: 0 !important;
     background: transparent !important;
+}
+
+/* Title and caption are separate Streamlit widgets — space between their containers */
+[data-testid="stMain"] [data-testid="stElementContainer"]:has(.rro-page-title) {
+    margin-bottom: 8px !important;
+    padding-bottom: 0 !important;
 }
 
 .rro-page-title:hover,
@@ -722,25 +729,35 @@ div[data-baseweb="menu"] li[aria-selected="true"] {
     color: var(--rro-text);
 }
 
+div.rro-results-totals,
 .rro-results-totals {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 6px 12px;
-    color: var(--rro-text-muted);
-    font-size: 0.82rem;
-    font-weight: 600;
-    margin: 0 0 0.45rem 0;
-    padding: 8px 10px;
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid var(--rro-border);
-    border-radius: 8px;
+    display: block !important;
+    color: var(--rro-text-muted) !important;
+    font-size: 0.82rem !important;
+    font-weight: 600 !important;
+    line-height: 1.45 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: transparent !important;
+    background-color: transparent !important;
+    border: 0 !important;
+    border-width: 0 !important;
+    border-style: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
 }
 
 .rro-results-totals .rro-stat {
     display: inline-flex;
     align-items: center;
     gap: 4px;
+    margin-right: 4px;
+}
+
+/* Totals sit inside a Streamlit element container; margin there creates real
+   space before the next sibling (first result card). */
+[data-testid="stMain"] [data-testid="stElementContainer"]:has(.rro-results-totals) {
+    margin-bottom: 20px !important;
 }
 
 .rro-comment-group {
@@ -847,53 +864,44 @@ div[data-baseweb="menu"] li[aria-selected="true"] {
     text-decoration: underline;
 }
 
-/* Resultaatkaarten: compact, horizontaal, dark navy (Streamlit columns + marker) */
+/* Resultaatkaarten: style ONLY the card's own BorderWrapper.
+   NEVER use :has(.rro-result-card-marker) on stVerticalBlock — after search the
+   main column also :has markers and then inherits card padding + height:auto,
+   which expands leftover component iframes above the title (~159px each). */
 .rro-result-card-marker {
     display: none !important;
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
 }
 
-div[data-testid="stVerticalBlock"]:has(> div .rro-result-card-marker) {
+[data-testid="stVerticalBlockBorderWrapper"]:has(> div .rro-result-card-marker),
+[data-testid="stVerticalBlockBorderWrapper"]:has(.rro-result-card-marker) {
     background: var(--rro-card) !important;
     border: 1px solid var(--rro-border) !important;
     border-radius: var(--rro-radius) !important;
     padding: 12px 12px 18px !important;
     margin: 0 0 12px 0 !important;
-    transition: border-color 0.15s ease;
     overflow: visible !important;
+    box-shadow: none !important;
 }
 
-div[data-testid="stVerticalBlock"]:has(> div .rro-result-card-marker):hover {
-    border-color: var(--rro-cta) !important;
+[data-testid="stVerticalBlockBorderWrapper"]:has(.rro-result-card-marker):hover {
+    border-color: var(--rro-border) !important;
 }
 
-div[data-testid="stVerticalBlock"]:has(> div .rro-result-card-marker)
+[data-testid="stVerticalBlockBorderWrapper"]:has(.rro-result-card-marker)
     [data-testid="stHorizontalBlock"] {
     align-items: flex-start !important;
     gap: 0.75rem !important;
-    overflow: visible !important;
 }
 
-div[data-testid="stVerticalBlock"]:has(> div .rro-result-card-marker)
-    [data-testid="column"],
-div[data-testid="stVerticalBlock"]:has(> div .rro-result-card-marker)
-    [data-testid="stMarkdown"],
-div[data-testid="stVerticalBlock"]:has(> div .rro-result-card-marker)
-    [data-testid="stMarkdownContainer"],
-div[data-testid="stVerticalBlock"]:has(> div .rro-result-card-marker)
-    [data-testid="stElementContainer"],
-div[data-testid="stVerticalBlock"]:has(> div .rro-result-card-marker)
-    [data-testid="stVerticalBlockBorderWrapper"] {
-    overflow: visible !important;
-    height: auto !important;
-    max-height: none !important;
-}
-
-div[data-testid="stVerticalBlock"]:has(> div .rro-result-card-marker)
+[data-testid="stVerticalBlockBorderWrapper"]:has(.rro-result-card-marker)
     [data-testid="stImage"] {
     margin: 0 !important;
 }
 
-div[data-testid="stVerticalBlock"]:has(> div .rro-result-card-marker)
+[data-testid="stVerticalBlockBorderWrapper"]:has(.rro-result-card-marker)
     [data-testid="stImage"] img {
     width: 88px !important;
     height: 88px !important;
@@ -902,13 +910,6 @@ div[data-testid="stVerticalBlock"]:has(> div .rro-result-card-marker)
     border-radius: var(--rro-radius-sm) !important;
     border: 1px solid var(--rro-border) !important;
     background: var(--rro-input);
-}
-
-div[data-testid="stVerticalBlock"]:has(> div .rro-result-card-marker):hover
-    [data-testid="stImage"] img,
-div[data-testid="stVerticalBlock"]:has(> div .rro-result-card-marker):hover
-    .rro-thumb-placeholder {
-    border-color: var(--rro-cta) !important;
 }
 
 .rro-result-card {
@@ -927,7 +928,7 @@ div[data-testid="stVerticalBlock"]:has(> div .rro-result-card-marker):hover
 }
 
 .rro-result-card:hover {
-    border-color: var(--rro-cta);
+    border-color: var(--rro-border);
     box-shadow: none;
 }
 
@@ -943,7 +944,7 @@ div[data-testid="stVerticalBlock"]:has(> div .rro-result-card-marker):hover
 
 .rro-result-card:hover .rro-thumb,
 .rro-result-card:hover .rro-thumb-placeholder {
-    border-color: var(--rro-cta);
+    border-color: var(--rro-border);
 }
 
 .rro-thumb-placeholder {
