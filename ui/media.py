@@ -16,6 +16,7 @@ from meta.insights import parse_insights_metrics
 logger = logging.getLogger(__name__)
 
 MEDIA_DIR = Path(__file__).resolve().parents[1] / "data" / "media"
+THUMBNAILS_DIR = Path(__file__).resolve().parents[1] / "data" / "thumbnails"
 
 # Exact hosts that are page sites / fixtures, not image CDNs.
 _BLOCKED_HOSTS = {
@@ -54,9 +55,16 @@ def _is_displayable_image_url(value: str | None) -> bool:
 
 
 def local_media_path(post_id: int) -> Path | None:
-    """Return the first existing cached thumbnail for a post id."""
+    """Return the first existing cached thumbnail for a post id.
+
+    Looks in ``data/media/post_{id}.*`` first, then ``data/thumbnails/{id}.*``.
+    """
     for ext in (".jpg", ".jpeg", ".png", ".webp", ".gif"):
         path = MEDIA_DIR / f"post_{post_id}{ext}"
+        if path.exists() and path.stat().st_size > 0:
+            return path
+    for ext in (".jpg", ".jpeg", ".png", ".webp", ".gif"):
+        path = THUMBNAILS_DIR / f"{post_id}{ext}"
         if path.exists() and path.stat().st_size > 0:
             return path
     return None
@@ -158,57 +166,48 @@ def resolve_display_image_url(
 
 
 def get_image_for_search_result(result) -> tuple[str | None, str]:
-    """Resolve the best image URL for a search result card."""
+    """Resolve the best image URL for a search result card.
+
+    Only local cached files are used in the UI. Meta CDN URLs expire / return
+    403 quickly, and Streamlit sanitizes ``onerror`` so broken ``<img>`` tags
+    stay visible — better a clean placeholder than a broken icon.
+    """
     with get_connection() as conn:
         if result.entity_type == "post":
-            row = conn.execute(
-                """
-                SELECT id, platform, thumbnail_url, media_url, media_type, raw_json
-                FROM posts
-                WHERE id = ?
-                """,
-                (result.entity_id,),
-            ).fetchone()
             post_id = result.entity_id
         else:
             row = conn.execute(
-                """
-                SELECT
-                    p.id AS id,
-                    p.platform,
-                    p.thumbnail_url,
-                    p.media_url,
-                    p.media_type,
-                    p.raw_json
-                FROM comments c
-                JOIN posts p ON p.id = c.post_id
-                WHERE c.id = ?
-                """,
+                "SELECT post_id FROM comments WHERE id = ?",
                 (result.entity_id,),
             ).fetchone()
-            post_id = int(row["id"]) if row else None
+            post_id = int(row["post_id"]) if row and row["post_id"] is not None else None
 
     if post_id is not None:
         local_uri = local_media_data_uri(int(post_id))
         if local_uri:
             return local_uri, "local_cache"
 
-    if not row:
-        return resolve_display_image_url(search_index_thumbnail=result.thumbnail_url)
+    return None, "no_local_cache"
 
-    # Facebook CDN URLs expire / return 403 quickly. Without a local cache file,
-    # returning those URLs only shows a broken image — prefer a clean placeholder.
-    if (row["platform"] or "") == "facebook":
-        return None, "no_local_cache"
 
-    return resolve_display_image_url(
-        search_index_thumbnail=result.thumbnail_url,
-        thumbnail_url=row["thumbnail_url"],
-        media_url=row["media_url"],
-        media_type=row["media_type"],
-        raw_json=row["raw_json"],
-        prefer_thumbnail=False,
-    )
+def get_image_for_entity(entity_type: str, entity_id: int) -> tuple[str | None, str]:
+    """Load image URL for a search result entity from local cache only."""
+    with get_connection() as conn:
+        if entity_type == "post":
+            post_id = entity_id
+        else:
+            row = conn.execute(
+                "SELECT post_id FROM comments WHERE id = ?",
+                (entity_id,),
+            ).fetchone()
+            if not row or row["post_id"] is None:
+                return None, "none"
+            post_id = int(row["post_id"])
+
+    local_uri = local_media_data_uri(post_id)
+    if local_uri:
+        return local_uri, "local_cache"
+    return None, "no_local_cache"
 
 
 def _media_product_type_from_raw(raw_json: str | None) -> str:
@@ -494,61 +493,3 @@ def get_content_type_for_result(result) -> str:
         content_type=row["content_type"],
         raw_json=row["raw_json"],
     )
-
-
-def get_image_for_entity(entity_type: str, entity_id: int) -> tuple[str | None, str]:
-    """Load image URL for a search result entity from SQLite."""
-    with get_connection() as conn:
-        if entity_type == "post":
-            row = conn.execute(
-                """
-                SELECT id, platform, thumbnail_url, media_url, media_type, raw_json
-                FROM posts
-                WHERE id = ?
-                """,
-                (entity_id,),
-            ).fetchone()
-            if not row:
-                return None, "none"
-            local_uri = local_media_data_uri(int(row["id"]))
-            if local_uri:
-                return local_uri, "local_cache"
-            if (row["platform"] or "") == "facebook":
-                return None, "no_local_cache"
-            return resolve_display_image_url(
-                thumbnail_url=row["thumbnail_url"],
-                media_url=row["media_url"],
-                media_type=row["media_type"],
-                raw_json=row["raw_json"],
-                prefer_thumbnail=False,
-            )
-
-        row = conn.execute(
-            """
-            SELECT
-                p.id AS id,
-                p.platform,
-                p.thumbnail_url,
-                p.media_url,
-                p.media_type,
-                p.raw_json
-            FROM comments c
-            JOIN posts p ON p.id = c.post_id
-            WHERE c.id = ?
-            """,
-            (entity_id,),
-        ).fetchone()
-        if not row:
-            return None, "none"
-        local_uri = local_media_data_uri(int(row["id"]))
-        if local_uri:
-            return local_uri, "local_cache"
-        if (row["platform"] or "") == "facebook":
-            return None, "no_local_cache"
-        return resolve_display_image_url(
-            thumbnail_url=row["thumbnail_url"],
-            media_url=row["media_url"],
-            media_type=row["media_type"],
-            raw_json=row["raw_json"],
-            prefer_thumbnail=False,
-        )

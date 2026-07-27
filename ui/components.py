@@ -363,17 +363,26 @@ def render_search_form() -> tuple[str, set[str], set[str], tuple[date, ...]]:
     st.session_state.pop("selected_date", None)
 
     st.markdown('<div class="rro-search-form-header"><h3>Zoeken</h3></div>', unsafe_allow_html=True)
-    query = st.text_input(
-        "Zoekterm",
-        placeholder="Typ minstens 3 tekens...",
-        label_visibility="collapsed",
-        key="search_query",
-    )
 
-    filter_cols = st.columns(3)
+    search_cols = st.columns([5, 1], gap="small")
+    with search_cols[0]:
+        query = st.text_input(
+            "Zoekterm",
+            placeholder="Typ minstens 3 tekens...",
+            label_visibility="collapsed",
+            key="search_query",
+        )
+    with search_cols[1]:
+        st.markdown(
+            '<div class="rro-search-submit" aria-hidden="true"></div>',
+            unsafe_allow_html=True,
+        )
+        st.button("Zoeken", use_container_width=True)
+
+    filter_cols = st.columns(3, gap="small")
     with filter_cols[0]:
         platform_labels = st.multiselect(
-            "Platform",
+            "Platforms",
             ["Instagram", "Facebook"],
             default=["Instagram", "Facebook"],
         )
@@ -389,9 +398,6 @@ def render_search_form() -> tuple[str, set[str], set[str], tuple[date, ...]]:
             format="YYYY/MM/DD",
             key="date_range_filter",
         )
-
-    # Fallback button; searching is automatic, so this is optional.
-    st.button("Zoeken", use_container_width=False)
 
     platforms, entity_types = resolve_checkbox_filters(
         instagram="Instagram" in platform_labels,
@@ -659,19 +665,18 @@ def render_results_section(
     content_count: int | None = None,
     comment_count: int | None = None,
 ) -> None:
-    """Render results inside a clear visual section (header + cards/empty state)."""
+    """Render results inside the main dashboard card (grows with content)."""
     _ = content_count, comment_count  # kept for backward compatibility; no longer shown
-    with st.container(border=True):
-        st.markdown(
-            '<div class="rro-results-section">',
-            unsafe_allow_html=True,
-        )
-        render_results_header(results)
-        if not results:
-            st.info("Geen resultaten gevonden in de lokale database.")
-        else:
-            render_results(results, query=query)
-        st.markdown("</div>", unsafe_allow_html=True)
+    st.markdown(
+        '<div class="rro-results-section">',
+        unsafe_allow_html=True,
+    )
+    render_results_header(results)
+    if not results:
+        st.info("Geen resultaten gevonden in de lokale database.")
+    else:
+        render_results(results, query=query)
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 def render_results(results: list[SearchResult], query: str | None = None) -> None:
