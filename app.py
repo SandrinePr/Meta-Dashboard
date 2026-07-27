@@ -41,7 +41,10 @@ def main() -> None:
     inject_styles()
     logging.basicConfig(level=logging.INFO)
 
-    st.title("Social Media Search Dashboard")
+    st.markdown(
+        '<h1 class="rro-page-title">Social Media Search Dashboard</h1>',
+        unsafe_allow_html=True,
+    )
     st.caption("Zoek lokaal in gesynchroniseerde Instagram- en Facebook-content.")
 
     initialize_database()
