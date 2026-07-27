@@ -9,7 +9,6 @@ from datetime import date, datetime
 from typing import Iterable
 
 import streamlit as st
-import streamlit.components.v1 as components
 
 from search.engine import (
     DEFAULT_FILTER_TYPES,
@@ -176,84 +175,15 @@ def matches_hashtag_query(result: SearchResult, query: str) -> bool:
 
 
 def inject_styles() -> None:
-    """Inject global RRO theme CSS and mobile sidebar click-outside close."""
+    """Inject global RRO theme CSS only (no iframes — they create empty gaps)."""
     st.markdown(RRO_CSS, unsafe_allow_html=True)
-    # Force top spacing into parent document — Streamlit emotion CSS can ignore
-    # margin on .block-container; padding-top on [data-testid="stMain"] sticks.
-    components.html(
-        """
-        <script>
-        (function () {
-          const MQ = window.matchMedia("(max-width: 800px)");
-          const doc = window.parent.document;
 
-          const STYLE_ID = "rro-top-spacing-v2";
-          let styleEl = doc.getElementById(STYLE_ID);
-          if (!styleEl) {
-            styleEl = doc.createElement("style");
-            styleEl.id = STYLE_ID;
-            doc.head.appendChild(styleEl);
-          }
-          styleEl.textContent = [
-            'section.main[data-testid="stMain"], [data-testid="stMain"] {',
-            "  padding-top: 5rem !important;",
-            "}",
-            'div.stMainBlockContainer.block-container, [data-testid="stMain"] .block-container {',
-            "  margin-top: 0 !important;",
-            "}",
-            'div[data-testid="stElementContainer"]:has(iframe[height="0"]),',
-            'div[data-testid="stElementContainer"]:has(iframe[height="0px"]) {',
-            "  display: none !important;",
-            "  height: 0 !important;",
-            "  margin: 0 !important;",
-            "  padding: 0 !important;",
-            "  overflow: hidden !important;",
-            "}",
-          ].join("\n");
 
-          function sidebarOpen() {
-            const sidebar = doc.querySelector('section[data-testid="stSidebar"]');
-            if (!sidebar) return false;
-            const style = window.parent.getComputedStyle(sidebar);
-            const transform = style.transform || "";
-            if (transform.includes("matrix") && transform !== "none") {
-              const match = transform.match(/matrix\\(([^)]+)\\)/);
-              if (match) {
-                const parts = match[1].split(",").map(function (p) { return parseFloat(p.trim()); });
-                if (parts.length >= 5 && parts[4] < -50) return false;
-              }
-            }
-            return style.visibility !== "hidden" && style.display !== "none";
-          }
-
-          function collapseSidebar() {
-            const btn = doc.querySelector('[data-testid="stSidebarCollapseButton"]');
-            if (btn && sidebarOpen()) btn.click();
-          }
-
-          if (doc.__rroSidebarOutsideBound) {
-            doc.removeEventListener("click", doc.__rroSidebarOutsideBound, true);
-          }
-          doc.__rroSidebarOutsideBound = function (event) {
-            if (!MQ.matches) return;
-            const sidebar = doc.querySelector('section[data-testid="stSidebar"]');
-            const collapseBtn = doc.querySelector('[data-testid="stSidebarCollapseButton"]');
-            const openBtn = doc.querySelector('[data-testid="collapsedControl"]');
-            if (!sidebar || !collapseBtn) return;
-            if (!sidebarOpen()) return;
-            const target = event.target;
-            if (sidebar.contains(target)) return;
-            if (collapseBtn.contains(target)) return;
-            if (openBtn && openBtn.contains(target)) return;
-            collapseSidebar();
-          };
-          doc.addEventListener("click", doc.__rroSidebarOutsideBound, true);
-        })();
-        </script>
-        """,
-        height=0,
-    )
-
+def inject_sidebar_helpers() -> None:
+    """No-op. Previously injected a components.html iframe that created a huge
+    empty gap above the title after search reruns.
+    """
+    return None
 
 
 def _format_date(value: str | None) -> str:
@@ -599,7 +529,7 @@ def render_result_card(result: SearchResult, query: str = "") -> None:
         f'<div class="rro-card-text">{highlighted_text}</div>'
     )
 
-    with st.container():
+    with st.container(border=True):
         st.markdown(
             '<div class="rro-result-card-marker" aria-hidden="true"></div>',
             unsafe_allow_html=True,
@@ -711,8 +641,10 @@ def render_results_section(
 ) -> None:
     """Render results inside the main dashboard card (grows with content)."""
     _ = content_count, comment_count  # kept for backward compatibility; no longer shown
+    # Do NOT wrap widgets in split open/close HTML divs — Streamlit renders each
+    # markdown as its own node; that pattern cannot create a real parent wrapper.
     st.markdown(
-        '<div class="rro-results-section">',
+        '<div class="rro-results-section" aria-hidden="true"></div>',
         unsafe_allow_html=True,
     )
     render_results_header(results)
@@ -720,7 +652,6 @@ def render_results_section(
         st.info("Geen resultaten gevonden in de lokale database.")
     else:
         render_results(results, query=query)
-    st.markdown("</div>", unsafe_allow_html=True)
 
 
 def render_results(results: list[SearchResult], query: str | None = None) -> None:
