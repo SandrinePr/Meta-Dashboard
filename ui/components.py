@@ -184,35 +184,32 @@ def inject_styles() -> None:
         """
         <script>
         (function () {
-          const doc = window.parent.document;
-          const STYLE_ID = "rro-top-spacing-v2";
-          let el = doc.getElementById(STYLE_ID);
-          if (!el) {
-            el = doc.createElement("style");
-            el.id = STYLE_ID;
-            doc.head.appendChild(el);
-          }
-          el.textContent = `
-            section.main[data-testid="stMain"],
-            [data-testid="stMain"] {
-              padding-top: 5rem !important;
-            }
-            div.stMainBlockContainer.block-container,
-            [data-testid="stMain"] .block-container {
-              margin-top: 0 !important;
-            }
-          `;
-        })();
-        </script>
-        """,
-        height=0,
-    )
-    components.html(
-        """
-        <script>
-        (function () {
           const MQ = window.matchMedia("(max-width: 800px)");
           const doc = window.parent.document;
+
+          const STYLE_ID = "rro-top-spacing-v2";
+          let styleEl = doc.getElementById(STYLE_ID);
+          if (!styleEl) {
+            styleEl = doc.createElement("style");
+            styleEl.id = STYLE_ID;
+            doc.head.appendChild(styleEl);
+          }
+          styleEl.textContent = [
+            'section.main[data-testid="stMain"], [data-testid="stMain"] {',
+            "  padding-top: 5rem !important;",
+            "}",
+            'div.stMainBlockContainer.block-container, [data-testid="stMain"] .block-container {',
+            "  margin-top: 0 !important;",
+            "}",
+            'div[data-testid="stElementContainer"]:has(iframe[height="0"]),',
+            'div[data-testid="stElementContainer"]:has(iframe[height="0px"]) {',
+            "  display: none !important;",
+            "  height: 0 !important;",
+            "  margin: 0 !important;",
+            "  padding: 0 !important;",
+            "  overflow: hidden !important;",
+            "}",
+          ].join("\n");
 
           function sidebarOpen() {
             const sidebar = doc.querySelector('section[data-testid="stSidebar"]');
@@ -256,6 +253,7 @@ def inject_styles() -> None:
         """,
         height=0,
     )
+
 
 
 def _format_date(value: str | None) -> str:
