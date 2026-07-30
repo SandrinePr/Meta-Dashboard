@@ -38,7 +38,7 @@ from ui.media import (
     get_image_for_search_result,
     get_local_image_path_for_result,
 )
-from ui.styles import RRO_CSS
+from ui import styles as styles_mod
 
 logger = logging.getLogger(__name__)
 
@@ -175,8 +175,15 @@ def matches_hashtag_query(result: SearchResult, query: str) -> bool:
 
 
 def inject_styles() -> None:
-    """Inject global RRO theme CSS only (no iframes — they create empty gaps)."""
-    st.markdown(RRO_CSS, unsafe_allow_html=True)
+    """Inject global RRO theme CSS only (no iframes — they create empty gaps).
+
+    Reload ``ui.styles`` each run so CSS edits reach the browser without a
+    full Streamlit process restart (Python otherwise keeps the first import).
+    """
+    import importlib
+
+    importlib.reload(styles_mod)
+    st.markdown(styles_mod.RRO_CSS, unsafe_allow_html=True)
 
 
 def inject_sidebar_helpers() -> None:
