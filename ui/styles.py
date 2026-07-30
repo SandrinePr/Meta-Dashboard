@@ -2,25 +2,26 @@
 
 RRO_CSS = """
 <style>
-/* rro-css-v5-totals-gap */
+/* rro-css-v6-celine-feedback */
 @import url('https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&display=swap');
 
 :root {
     --rro-bg: #101C2C;
     --rro-bg-deep: #0B1826;
-    --rro-sidebar: #07111D;
-    --rro-card: #151C2B;
+    --rro-sidebar: #101C2C;
+    --rro-card: #232E3B;
     --rro-card-light: #1C2433;
-    --rro-panel: #1A2230;
-    --rro-input: #252E3D;
+    --rro-panel: #313945;
+    --rro-input: #4B5560;
+    --rro-input-hover: #556070;
     --rro-cta: #B87844;
     --rro-cta-hover: #A45E2B;
     --rro-text: #F2F0EC;
     --rro-text-muted: rgba(242, 240, 236, 0.62);
     --rro-border: rgba(242, 240, 236, 0.12);
     --rro-border-accent: rgba(184, 120, 68, 0.45);
-    /* Hover/focus: warme stroke, geen lichtblauw */
-    --rro-stroke: var(--rro-cta);
+    /* Hover: border blijft --rro-border; alleen fill verandert */
+    --rro-stroke: var(--rro-border);
     --rro-shadow: 0 4px 18px rgba(0, 0, 0, 0.28);
     --rro-highlight: #B87844;
     --rro-cyan: #57C7E3;
@@ -35,7 +36,7 @@ html, body, [class*="css"] {
 }
 
 .stApp {
-    background: linear-gradient(165deg, #0B1524 0%, #101C2C 42%, #0E1A2A 100%);
+    background: linear-gradient(165deg, #313945 0%, #101C2C 100%);
     color: var(--rro-text);
     overflow-x: hidden;
 }
@@ -61,25 +62,25 @@ div.stMainBlockContainer.block-container,
 [data-testid="stMain"] div.block-container,
 [data-testid="stMain"] .stMainBlockContainer.block-container,
 section.main .block-container {
-    max-width: 800px !important;
+    max-width: 1000px !important;
     margin-left: auto !important;
     margin-right: auto !important;
     margin-top: 0 !important;
     margin-bottom: 0 !important;
-    padding: 0.65rem 1.1rem 1rem !important;
-    background: var(--rro-panel) !important;
+    padding: 2rem !important;
+    background: #313945 !important;
     border: 1px solid var(--rro-border) !important;
     border-radius: 16px !important;
     box-shadow: var(--rro-shadow) !important;
 }
 
-/* Compacte verticale ritme in de hoofdkaart */
+/* Verticale ritme in de hoofdkaart */
 [data-testid="stMain"] .block-container > div {
-    gap: 0.35rem !important;
+    gap: 1rem !important;
 }
 
 [data-testid="stMain"] [data-testid="stVerticalBlock"] {
-    gap: 0.35rem !important;
+    gap: 1rem !important;
 }
 
 [data-testid="stMain"] [data-testid="stElementContainer"] {
@@ -140,12 +141,12 @@ h2, h3, h4, h5, h6, p, label, span, div {
 }
 
 section[data-testid="stSidebar"] {
-    background: linear-gradient(180deg, #0B1826 0%, #07111D 55%, #0C1724 100%) !important;
+    background: #101C2C !important;
     border-right: 1px solid var(--rro-border);
     box-shadow: none;
 }
 
-/* Desktop: compacte sidebar ~230px */
+/* Desktop: sidebar 300px */
 @media (min-width: 801px) {
     [data-testid="stSidebarCollapseButton"],
     [data-testid="collapsedControl"],
@@ -154,8 +155,8 @@ section[data-testid="stSidebar"] {
     }
 
     section[data-testid="stSidebar"] {
-        min-width: 230px !important;
-        width: 230px !important;
+        min-width: 300px !important;
+        width: 300px !important;
         transform: translateX(0) !important;
         visibility: visible !important;
     }
@@ -164,9 +165,20 @@ section[data-testid="stSidebar"] {
         padding-left: 0.8rem !important;
         padding-right: 0.8rem !important;
     }
+
+    .rro-mobile-sync-hint {
+        display: none !important;
+    }
 }
 
 @media (max-width: 800px) {
+    /* Header-ruimte voor zichtbare Sync-knop */
+    [data-testid="stHeader"] {
+        height: 3.5rem !important;
+        min-height: 3.5rem !important;
+        background: transparent !important;
+    }
+
     [data-testid="stSidebarCollapseButton"] {
         display: flex !important;
         align-items: center !important;
@@ -179,7 +191,7 @@ section[data-testid="stSidebar"] {
         height: 36px !important;
         border-radius: 8px !important;
         border: 1px solid var(--rro-border) !important;
-        background: rgba(26, 36, 52, 0.95) !important;
+        background: #313945 !important;
         color: var(--rro-text) !important;
         cursor: pointer !important;
     }
@@ -196,14 +208,43 @@ section[data-testid="stSidebar"] {
         font-weight: 400;
     }
 
+    /* Duidelijke Sync-knop linksboven op mobiel */
     [data-testid="collapsedControl"] {
         display: flex !important;
-        z-index: 1000001 !important;
+        align-items: center !important;
+        position: fixed !important;
+        top: 12px !important;
+        left: 12px !important;
+        z-index: 1000003 !important;
+        width: auto !important;
+        min-width: 44px !important;
+        height: 40px !important;
+        padding: 0 12px !important;
+        border-radius: 8px !important;
+        border: 1px solid var(--rro-border) !important;
+        background: #313945 !important;
+        color: var(--rro-text) !important;
+        box-shadow: var(--rro-shadow) !important;
+        cursor: pointer !important;
+    }
+
+    [data-testid="collapsedControl"] svg {
+        color: var(--rro-text) !important;
+        fill: var(--rro-text) !important;
+    }
+
+    [data-testid="collapsedControl"]::after {
+        content: "Synchronisatie";
+        font-size: 0.8rem;
+        font-weight: 600;
+        margin-left: 6px;
+        color: var(--rro-text);
+        white-space: nowrap;
     }
 
     section[data-testid="stSidebar"] {
-        min-width: min(230px, 88vw) !important;
-        width: min(230px, 88vw) !important;
+        min-width: min(300px, 90vw) !important;
+        width: min(300px, 90vw) !important;
     }
 
     section[data-testid="stSidebar"] > div:first-child {
@@ -218,17 +259,29 @@ section[data-testid="stSidebar"] {
         margin-left: auto !important;
         margin-right: auto !important;
         margin-bottom: 0.25rem !important;
-        padding: 0.55rem 0.85rem 0.85rem !important;
+        padding: 1.25rem 1rem !important;
     }
 
     section.main[data-testid="stMain"],
     [data-testid="stMain"] {
-        padding-top: 5rem !important;
+        padding-top: 4.5rem !important;
+    }
+
+    .rro-mobile-sync-hint {
+        display: block;
+        margin: 0 0 0.75rem 0;
+        padding: 8px 10px;
+        border-radius: 8px;
+        border: 1px solid var(--rro-border);
+        background: #1A2230;
+        color: var(--rro-text-muted);
+        font-size: 0.78rem;
+        line-height: 1.4;
     }
 }
 
 section[data-testid="stSidebar"] > div {
-    background: transparent !important;
+    background: #101C2C !important;
 }
 
 section[data-testid="stSidebar"] h1,
@@ -283,14 +336,12 @@ section[data-testid="stSidebar"] .stButton > button p {
     align-items: center;
     justify-content: center;
     color: var(--rro-cta);
-    background: rgba(184, 120, 68, 0.12);
-    border: 1px solid rgba(184, 120, 68, 0.3);
     flex-shrink: 0;
 }
 
 .rro-svg-icon {
-    width: 13px;
-    height: 13px;
+    width: 15px;
+    height: 15px;
     display: block;
 }
 
@@ -316,9 +367,8 @@ section[data-testid="stSidebar"] .stButton > button p {
     padding: 8px 10px;
     border-radius: 8px;
     border: 1px solid var(--rro-border) !important;
-    /* Zelfde bg als de Social Media Search Dashboard-hoofdkaart */
-    background: #1A2230 !important;
-    background-color: #1A2230 !important;
+    background: #313945 !important;
+    background-color: #313945 !important;
     color: var(--rro-text-muted) !important;
     font-size: 0.74rem;
     line-height: 1.4;
@@ -352,6 +402,24 @@ section[data-testid="stSidebar"] .stButton > button p {
     color: var(--rro-text);
 }
 
+/* Loading indicator tijdens zoeken */
+[data-testid="stSpinner"],
+.stSpinner {
+    color: var(--rro-text) !important;
+}
+
+.stSpinner > div {
+    border-top-color: var(--rro-cta) !important;
+    border-right-color: rgba(184, 120, 68, 0.25) !important;
+    border-bottom-color: rgba(184, 120, 68, 0.25) !important;
+    border-left-color: rgba(184, 120, 68, 0.25) !important;
+}
+
+.stSpinner p,
+[data-testid="stSpinner"] p {
+    color: var(--rro-text) !important;
+}
+
 .rro-filter-label {
     font-size: 0.8rem;
     font-weight: 600;
@@ -371,39 +439,11 @@ div[data-testid="stForm"] [data-testid="stFormSubmitHint"] {
     display: none !important;
 }
 
-/* Zoekrij: input + knop uitlijnen */
-[data-testid="stHorizontalBlock"]:has(.rro-search-submit) {
-    align-items: flex-end !important;
-    gap: 0.55rem !important;
-    margin-bottom: 0.55rem !important;
-}
-
-[data-testid="stHorizontalBlock"]:has(.rro-search-submit) > div {
-    overflow: visible !important;
-}
-
-.rro-search-submit {
-    display: none !important;
-    height: 0 !important;
-    margin: 0 !important;
-    padding: 0 !important;
-}
-
-[data-testid="stHorizontalBlock"]:has(.rro-search-submit) [data-testid="stButton"] {
-    margin-top: 0 !important;
-}
-
-[data-testid="stHorizontalBlock"]:has(.rro-search-submit) [data-testid="column"] {
-    display: flex !important;
-    flex-direction: column !important;
-    justify-content: flex-end !important;
-}
-
 /* Inputs — verticaal gecentreerde tekst */
 .stTextInput input,
 div[data-testid="stTextInput"] input,
 div[data-testid="stForm"] input[type="text"] {
-    background: var(--rro-input) !important;
+    background: #4B5560 !important;
     border: 1px solid var(--rro-border) !important;
     color: var(--rro-text) !important;
     border-radius: var(--rro-radius-sm) !important;
@@ -416,7 +456,7 @@ div[data-testid="stForm"] input[type="text"] {
     padding-left: 0.85rem !important;
     padding-right: 6.5rem !important;
     box-sizing: border-box !important;
-    transition: border-color 0.15s ease;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 
 .stTextInput input::placeholder {
@@ -424,15 +464,15 @@ div[data-testid="stForm"] input[type="text"] {
     line-height: var(--rro-control-h) !important;
 }
 
-/* Celine: geen extra balk — alleen warme stroke als hover/focus */
+/* Hover/focus: border blijft --rro-border; alleen fill verandert */
 .stTextInput input:hover,
 div[data-testid="stTextInput"] input:hover,
 .stTextInput input:focus,
 div[data-testid="stTextInput"] input:focus {
-    border-color: var(--rro-cta) !important;
+    border-color: var(--rro-border) !important;
     box-shadow: none !important;
     outline: none !important;
-    background: var(--rro-input) !important;
+    background: var(--rro-input-hover) !important;
 }
 
 div[data-testid="stTextInput"] [data-testid="stTextInputRootElement"],
@@ -511,21 +551,21 @@ div[data-testid="stDateInput"] [data-baseweb="popover"] > div > div {
 }
 
 div[data-testid="stDateInput"] [data-baseweb="input"] {
-    background: var(--rro-input) !important;
+    background: #4B5560 !important;
     border: 1px solid var(--rro-border) !important;
     border-radius: var(--rro-radius-sm) !important;
     min-height: var(--rro-control-h) !important;
     height: var(--rro-control-h) !important;
-    transition: border-color 0.15s ease !important;
+    transition: background-color 0.15s ease, border-color 0.15s ease !important;
     overflow: hidden !important;
 }
 
 div[data-testid="stDateInput"] [data-baseweb="input"]:hover,
 div[data-testid="stDateInput"] [data-baseweb="input"]:focus-within,
 div[data-testid="stDateInput"]:hover [data-baseweb="input"] {
-    border-color: var(--rro-cta) !important;
+    border-color: var(--rro-border) !important;
     box-shadow: none !important;
-    background: var(--rro-input) !important;
+    background: var(--rro-input-hover) !important;
 }
 
 div[data-testid="stDateInput"] input {
@@ -554,9 +594,7 @@ div[data-testid="stDateInput"] svg {
     fill: var(--rro-text-muted) !important;
 }
 
-/* Zoeken-knop naast zoekveld: oranje, hover = iets donkerder oranje */
-.rro-search-submit + div .stButton > button,
-[data-testid="stHorizontalBlock"]:has(.rro-search-submit) .stButton > button,
+/* Zoeken-knop onder zoekveld: oranje, hover = iets donkerder oranje */
 .stButton > button {
     background: var(--rro-cta) !important;
     color: #FFFFFF !important;
@@ -571,7 +609,6 @@ div[data-testid="stDateInput"] svg {
 }
 
 .stButton > button:hover,
-[data-testid="stHorizontalBlock"]:has(.rro-search-submit) .stButton > button:hover,
 .stButton > button:focus,
 .stButton > button:focus-visible {
     background: var(--rro-cta-hover) !important;
@@ -597,7 +634,7 @@ div[data-testid="stDateInput"] svg {
 }
 
 [data-testid="stMultiSelect"] div[data-baseweb="select"] > div {
-    background-color: var(--rro-input) !important;
+    background-color: #4B5560 !important;
     color: var(--rro-text) !important;
     border: 1px solid var(--rro-border) !important;
     border-radius: var(--rro-radius-sm) !important;
@@ -605,7 +642,7 @@ div[data-testid="stDateInput"] svg {
     height: auto !important;
     max-height: none !important;
     box-shadow: none !important;
-    transition: border-color 0.15s ease;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
     padding-top: 2px !important;
     padding-bottom: 2px !important;
 }
@@ -613,9 +650,9 @@ div[data-testid="stDateInput"] svg {
 [data-testid="stMultiSelect"] div[data-baseweb="select"] > div:hover,
 [data-testid="stMultiSelect"] div[data-baseweb="select"]:hover > div,
 [data-testid="stMultiSelect"] div[data-baseweb="select"] > div[aria-expanded="true"] {
-    border-color: var(--rro-cta) !important;
+    border-color: var(--rro-border) !important;
     box-shadow: none !important;
-    background-color: var(--rro-input) !important;
+    background-color: var(--rro-input-hover) !important;
 }
 
 [data-testid="stMultiSelect"] span[data-baseweb="tag"] {
@@ -713,13 +750,19 @@ div[data-baseweb="menu"] li[aria-selected="true"] {
     margin-top: 0.4rem;
 }
 
+/* Filterrij: ruimte onder platforms/type/datums */
+[data-testid="stMain"] [data-testid="stHorizontalBlock"]:has([data-testid="stMultiSelect"]) {
+    margin-bottom: 1.5rem !important;
+    gap: 1rem !important;
+    flex-wrap: wrap !important;
+}
+
 .rro-results-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin: 0.35rem 0 0.35rem 0;
+    margin: 1.5rem 0 0.35rem 0;
     padding-bottom: 0.3rem;
-    border-bottom: 1px solid var(--rro-border);
 }
 
 .rro-results-header h2 {
@@ -731,7 +774,10 @@ div[data-baseweb="menu"] li[aria-selected="true"] {
 
 div.rro-results-totals,
 .rro-results-totals {
-    display: block !important;
+    display: flex !important;
+    flex-wrap: wrap !important;
+    align-items: center !important;
+    gap: 1rem !important;
     color: var(--rro-text-muted) !important;
     font-size: 0.82rem !important;
     font-weight: 600 !important;
@@ -751,7 +797,7 @@ div.rro-results-totals,
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    margin-right: 4px;
+    margin-right: 0;
 }
 
 /* Totals sit inside a Streamlit element container; margin there creates real
@@ -876,11 +922,12 @@ div.rro-results-totals,
 }
 
 [data-testid="stVerticalBlockBorderWrapper"]:has(> div .rro-result-card-marker),
-[data-testid="stVerticalBlockBorderWrapper"]:has(.rro-result-card-marker) {
-    background: var(--rro-card) !important;
+[data-testid="stVerticalBlockBorderWrapper"]:has(.rro-result-card-marker),
+[data-testid="stLayoutWrapper"]:has(> [data-testid="stVerticalBlock"] > [data-testid="stElementContainer"] .rro-result-card-marker) {
+    background: #232E3B !important;
     border: 1px solid var(--rro-border) !important;
-    border-radius: var(--rro-radius) !important;
-    padding: 12px 12px 18px !important;
+    border-radius: 0.5rem !important;
+    padding: 1rem !important;
     margin: 0 0 12px 0 !important;
     overflow: visible !important;
     box-shadow: none !important;
@@ -1060,13 +1107,13 @@ div.rro-results-totals,
     display: flex !important;
     flex-wrap: wrap !important;
     align-items: center !important;
-    gap: 8px 14px !important;
+    gap: 1rem !important;
     margin: 10px 0 0 0 !important;
     padding: 10px 12px 12px !important;
     color: var(--rro-text-muted) !important;
     font-size: 0.78rem !important;
     line-height: 1.45 !important;
-    background: rgba(255, 255, 255, 0.03) !important;
+    background: transparent !important;
     border: 1px solid var(--rro-border) !important;
     border-radius: var(--rro-radius-sm) !important;
     overflow: visible !important;
@@ -1137,7 +1184,7 @@ div.rro-results-totals,
 }
 
 .rro-totals-sep {
-    color: var(--rro-text-muted);
+    display: none;
 }
 
 .rro-results-totals .rro-stat-label-inline {
@@ -1161,7 +1208,6 @@ div.rro-results-totals,
     color: #FFFFFF;
     border-radius: 4px;
     padding: 0 4px;
-    font-weight: 700;
 }
 
 .hashtag-match,
