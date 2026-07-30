@@ -328,26 +328,35 @@ def render_search_form() -> tuple[str, set[str], set[str], tuple[date, ...]]:
         label_visibility="collapsed",
         key="search_query",
     )
-    st.button("Zoeken", use_container_width=True)
 
-    filter_cols = st.columns(3, gap="small")
-    with filter_cols[0]:
-        platform_labels = st.multiselect(
-            "Platforms",
-            ["Instagram", "Facebook"],
-            default=["Instagram", "Facebook"],
+    with st.container():
+        st.markdown(
+            '<div class="rro-filter-block-anchor" aria-hidden="true"></div>',
+            unsafe_allow_html=True,
         )
-    with filter_cols[1]:
-        type_labels = st.multiselect(
-            "Type",
-            ["Comments", "Tags", "Hashtags", "Captions"],
-            default=["Comments", "Tags", "Hashtags", "Captions"],
-        )
-    with filter_cols[2]:
-        date_range = st.date_input(
-            "Datums",
-            format="YYYY/MM/DD",
-            key="date_range_filter",
+        filter_cols = st.columns(3, gap="small")
+        with filter_cols[0]:
+            platform_labels = st.multiselect(
+                "Platforms",
+                ["Instagram", "Facebook"],
+                default=["Instagram", "Facebook"],
+            )
+        with filter_cols[1]:
+            type_labels = st.multiselect(
+                "Type",
+                ["Comments", "Tags", "Hashtags", "Captions"],
+                default=["Comments", "Tags", "Hashtags", "Captions"],
+            )
+        with filter_cols[2]:
+            date_range = st.date_input(
+                "Datums",
+                format="YYYY/MM/DD",
+                key="date_range_filter",
+            )
+        st.button("Zoeken")
+        st.markdown(
+            '<div class="rro-search-button-anchor" aria-hidden="true"></div>',
+            unsafe_allow_html=True,
         )
 
     platforms, entity_types = resolve_checkbox_filters(

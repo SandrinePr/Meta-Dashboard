@@ -2,7 +2,7 @@
 
 RRO_CSS = """
 <style>
-/* rro-css-v6-celine-feedback */
+/* rro-css-v22-filter-block-pad */
 @import url('https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&display=swap');
 
 :root {
@@ -24,7 +24,7 @@ RRO_CSS = """
     --rro-stroke: var(--rro-border);
     --rro-shadow: 0 4px 18px rgba(0, 0, 0, 0.28);
     --rro-highlight: #B87844;
-    --rro-cyan: #57C7E3;
+    --rro-cyan: #A1BACA;
     --rro-badge: #303945;
     --rro-radius: 12px;
     --rro-radius-sm: 8px;
@@ -162,8 +162,8 @@ section[data-testid="stSidebar"] {
     }
 
     section[data-testid="stSidebar"] > div {
-        padding-left: 0.8rem !important;
-        padding-right: 0.8rem !important;
+        padding-left: 2rem !important;
+        padding-right: 2rem !important;
     }
 
     .rro-mobile-sync-hint {
@@ -594,7 +594,61 @@ div[data-testid="stDateInput"] svg {
     fill: var(--rro-text-muted) !important;
 }
 
-/* Zoeken-knop onder zoekveld: oranje, hover = iets donkerder oranje */
+/* Zoeken-knop: stabiele anchor — ruimte tussen filterrij en knop weg */
+[data-testid="stMain"]
+[data-testid="stVerticalBlock"]:has(.rro-search-button-anchor) {
+    gap: 0 !important;
+    row-gap: 0 !important;
+}
+
+/* Filter+knop-wrapper: 16px boven de filters (unieke marker als eerste child) */
+div[data-testid="stVerticalBlock"]:has(> div .rro-filter-block-anchor) {
+    padding-top: 16px !important;
+}
+
+[data-testid="stMain"]
+[data-testid="stElementContainer"]:has(.rro-filter-block-anchor),
+[data-testid="stMain"]
+[data-testid="stElementContainer"]:has(.rro-search-button-anchor) {
+    display: none !important;
+}
+
+/* Oorzaak van de lege strook: Streamlit zet 24px margin-bottom op de filter-rij */
+[data-testid="stMain"]
+[data-testid="stVerticalBlock"]:has(.rro-search-button-anchor)
+    [data-testid="stHorizontalBlock"] {
+    margin-bottom: 0 !important;
+}
+
+[data-testid="stMain"]
+[data-testid="stVerticalBlock"]:has(.rro-search-button-anchor)
+    > [data-testid="stLayoutWrapper"] {
+    margin-bottom: 0 !important;
+    padding-bottom: 0 !important;
+}
+
+[data-testid="stMain"]
+[data-testid="stVerticalBlock"]:has(.rro-search-button-anchor)
+    > [data-testid="stElementContainer"]:has(.stButton) {
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+    width: 150px !important;
+}
+
+[data-testid="stMain"]
+[data-testid="stVerticalBlock"]:has(.rro-search-button-anchor)
+    .stButton,
+[data-testid="stMain"]
+[data-testid="stVerticalBlock"]:has(.rro-search-button-anchor)
+    .stButton > button {
+    width: 150px !important;
+    min-width: 150px !important;
+    max-width: 150px !important;
+    box-sizing: border-box !important;
+}
+
 .stButton > button {
     background: var(--rro-cta) !important;
     color: #FFFFFF !important;
@@ -1199,7 +1253,7 @@ div.rro-results-totals,
 
 .rro-card-text .mention,
 .mention {
-    color: var(--rro-cyan);
+    color: #A1BACA;
     font-weight: 700;
 }
 
@@ -1224,21 +1278,21 @@ div.rro-results-totals,
     align-items: center;
     justify-content: center;
     width: 100%;
-    border: 1px solid rgba(242, 240, 236, 0.45);
+    border: 1px solid var(--rro-cta) !important;
     color: var(--rro-text) !important;
     background: transparent;
-    border-radius: var(--rro-radius-sm);
+    border-radius: var(--rro-radius-sm) !important;
     padding: 8px 10px;
     text-decoration: none !important;
     font-weight: 700;
     font-size: 0.82rem;
     text-align: center;
-    transition: border-color 0.15s ease;
+    transition: border-color 0.15s ease, background 0.15s ease;
 }
 
 .rro-btn-link:hover {
     background: transparent;
-    border-color: var(--rro-cta);
+    border-color: var(--rro-cta) !important;
     color: var(--rro-text) !important;
 }
 
