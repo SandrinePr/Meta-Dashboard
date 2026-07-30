@@ -46,6 +46,13 @@ def main() -> None:
         unsafe_allow_html=True,
     )
     st.caption("Zoek lokaal in gesynchroniseerde Instagram- en Facebook-content.")
+    st.markdown(
+        '<div class="rro-mobile-sync-hint">'
+        'Synchronisatie staat in de zijbalk — tik linksboven op '
+        '<strong>Synchronisatie</strong> om die te openen.'
+        "</div>",
+        unsafe_allow_html=True,
+    )
 
     initialize_database()
     totals = get_sync_summary()
@@ -124,14 +131,15 @@ def main() -> None:
         start_date = None
         end_date = None
 
-    results = search(
-        trimmed,
-        platforms=platforms,
-        entity_types=entity_types,
-        start_date=start_date,
-        end_date=end_date,
-        limit=50,
-    )
+    with st.spinner("Zoeken…"):
+        results = search(
+            trimmed,
+            platforms=platforms,
+            entity_types=entity_types,
+            start_date=start_date,
+            end_date=end_date,
+            limit=50,
+        )
     render_results_section(
         results,
         query=trimmed,

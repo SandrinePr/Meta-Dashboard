@@ -322,20 +322,13 @@ def render_search_form() -> tuple[str, set[str], set[str], tuple[date, ...]]:
 
     st.markdown('<div class="rro-search-form-header"><h3>Zoeken</h3></div>', unsafe_allow_html=True)
 
-    search_cols = st.columns([5, 1], gap="small")
-    with search_cols[0]:
-        query = st.text_input(
-            "Zoekterm",
-            placeholder="Typ minstens 3 tekens...",
-            label_visibility="collapsed",
-            key="search_query",
-        )
-    with search_cols[1]:
-        st.markdown(
-            '<div class="rro-search-submit" aria-hidden="true"></div>',
-            unsafe_allow_html=True,
-        )
-        st.button("Zoeken", use_container_width=True)
+    query = st.text_input(
+        "Zoekterm",
+        placeholder="Typ minstens 3 tekens...",
+        label_visibility="collapsed",
+        key="search_query",
+    )
+    st.button("Zoeken", use_container_width=True)
 
     filter_cols = st.columns(3, gap="small")
     with filter_cols[0]:
