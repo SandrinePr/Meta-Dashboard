@@ -2,7 +2,7 @@
 
 RRO_CSS = """
 <style>
-/* rro-css-v23-gray-border-cyan */
+/* rro-css-v25-result-btn-hover */
 @import url('https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&display=swap');
 
 :root {
@@ -127,8 +127,8 @@ h1:hover {
     box-shadow: none !important;
 }
 
-.stApp a:hover,
-.stApp a:focus {
+.stApp a:hover:not(.rro-btn-link),
+.stApp a:focus:not(.rro-btn-link) {
     background: transparent !important;
 }
 
@@ -161,11 +161,15 @@ section[data-testid="stSidebar"] {
         visibility: visible !important;
     }
 
-    section[data-testid="stSidebar"] > div,
-    section[data-testid="stSidebar"] [data-testid="stSidebarContent"],
-    section[data-testid="stSidebar"] [data-testid="stSidebarUserContent"] {
+    /* Exact one horizontal padding layer (Streamlit nests Content + UserContent). */
+    section[data-testid="stSidebar"] [data-testid="stSidebarContent"] {
         padding-left: 2rem !important;
         padding-right: 2rem !important;
+    }
+
+    section[data-testid="stSidebar"] [data-testid="stSidebarUserContent"] {
+        padding-left: 0 !important;
+        padding-right: 0 !important;
     }
 
     .rro-mobile-sync-hint {
@@ -1275,12 +1279,12 @@ div.rro-results-totals,
     background: transparent;
 }
 
-.rro-btn-link {
+a.rro-btn-link {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     width: 100%;
-    border: 2px solid rgba(242, 240, 236, 0.35) !important;
+    border: 1px solid var(--rro-border) !important;
     color: var(--rro-text) !important;
     background: transparent;
     border-radius: var(--rro-radius-sm) !important;
@@ -1289,13 +1293,20 @@ div.rro-results-totals,
     font-weight: 700;
     font-size: 0.82rem;
     text-align: center;
-    transition: border-color 0.15s ease, background 0.15s ease;
+    cursor: pointer;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 
-.rro-btn-link:hover {
-    background: transparent;
-    border-color: rgba(242, 240, 236, 0.35) !important;
+a.rro-btn-link:hover,
+a.rro-btn-link:focus,
+a.rro-btn-link:focus-visible {
+    border-color: var(--rro-border) !important;
+    box-shadow: none !important;
+    outline: none !important;
+    background: var(--rro-input) !important;
     color: var(--rro-text) !important;
+    text-decoration: none !important;
+    cursor: pointer;
 }
 
 .rro-btn-disabled {
