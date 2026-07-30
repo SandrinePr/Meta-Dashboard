@@ -2,7 +2,7 @@
 
 RRO_CSS = """
 <style>
-/* rro-css-v22-filter-block-pad */
+/* rro-css-v23-gray-border-cyan */
 @import url('https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&display=swap');
 
 :root {
@@ -161,7 +161,9 @@ section[data-testid="stSidebar"] {
         visibility: visible !important;
     }
 
-    section[data-testid="stSidebar"] > div {
+    section[data-testid="stSidebar"] > div,
+    section[data-testid="stSidebar"] [data-testid="stSidebarContent"],
+    section[data-testid="stSidebar"] [data-testid="stSidebarUserContent"] {
         padding-left: 2rem !important;
         padding-right: 2rem !important;
     }
@@ -1131,9 +1133,9 @@ div.rro-results-totals,
 }
 
 .badge-tag {
-    background: rgba(87, 199, 227, 0.14);
-    color: var(--rro-cyan);
-    border: 1px solid rgba(87, 199, 227, 0.55);
+    background: rgba(161, 186, 202, 0.14);
+    color: #A1BACA;
+    border: 1px solid rgba(161, 186, 202, 0.45);
 }
 
 .rro-card-date {
@@ -1278,7 +1280,7 @@ div.rro-results-totals,
     align-items: center;
     justify-content: center;
     width: 100%;
-    border: 1px solid var(--rro-cta) !important;
+    border: 2px solid rgba(242, 240, 236, 0.35) !important;
     color: var(--rro-text) !important;
     background: transparent;
     border-radius: var(--rro-radius-sm) !important;
@@ -1292,7 +1294,7 @@ div.rro-results-totals,
 
 .rro-btn-link:hover {
     background: transparent;
-    border-color: var(--rro-cta) !important;
+    border-color: rgba(242, 240, 236, 0.35) !important;
     color: var(--rro-text) !important;
 }
 
