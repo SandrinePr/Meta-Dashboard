@@ -14,7 +14,9 @@ logger = logging.getLogger(__name__)
 
 SEED_DB_PATH = Path(__file__).resolve().parents[1] / "data" / "seed_social_search.db"
 SEED_MEDIA_ZIP = Path(__file__).resolve().parents[1] / "data" / "seed_media.zip"
+SEED_VERSION_PATH = Path(__file__).resolve().parents[1] / "data" / "seed_version.txt"
 MEDIA_DIR = Path(__file__).resolve().parents[1] / "data" / "media"
+RUNTIME_SEED_VERSION_SUFFIX = ".seed_version"
 
 
 def get_connection(db_path: Path | None = None) -> sqlite3.Connection:
@@ -95,6 +97,16 @@ def ensure_media_cache(*, force: bool = False) -> bool:
     return True
 
 
+def _read_seed_version(path: Path) -> str:
+    if not path.exists():
+        return ""
+    return path.read_text(encoding="utf-8").strip()
+
+
+def _runtime_seed_version_path(db_path: Path) -> Path:
+    return db_path.with_name(db_path.name + RUNTIME_SEED_VERSION_SUFFIX)
+
+
 def ensure_seed_database(db_path: Path | None = None) -> bool:
     """Copy the bundled seed DB when the runtime DB is missing, empty, or older.
 
@@ -125,15 +137,25 @@ def ensure_seed_database(db_path: Path | None = None) -> bool:
             _post_count(SEED_DB_PATH) != _post_count(effective_db_path)
             or SEED_DB_PATH.stat().st_size != effective_db_path.stat().st_size
         )
-    if runtime_empty or seed_newer or seed_content_changed:
+    bundled_version = _read_seed_version(SEED_VERSION_PATH)
+    runtime_version = _read_seed_version(_runtime_seed_version_path(effective_db_path))
+    seed_version_changed = bool(bundled_version) and bundled_version != runtime_version
+    if runtime_empty or seed_newer or seed_content_changed or seed_version_changed:
         reason = (
             "empty"
             if runtime_empty
             else "seed_newer"
             if seed_newer
+            else "seed_version_changed"
+            if seed_version_changed
             else "seed_content_changed"
         )
         shutil.copy2(SEED_DB_PATH, effective_db_path)
+        if bundled_version:
+            _runtime_seed_version_path(effective_db_path).write_text(
+                bundled_version,
+                encoding="utf-8",
+            )
         logger.info(
             "Seeded runtime database from %s (%s posts, reason=%s)",
             SEED_DB_PATH,

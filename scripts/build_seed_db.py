@@ -109,6 +109,13 @@ def main() -> None:
         check=True,
     )
 
+    version_path = ROOT / "data" / "seed_version.txt"
+    version_path.write_text(
+        datetime.now(timezone.utc).isoformat(),
+        encoding="utf-8",
+    )
+    print(f"Wrote {version_path}")
+
 
 if __name__ == "__main__":
     main()
