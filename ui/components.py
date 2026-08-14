@@ -274,6 +274,14 @@ def _render_deploy_version() -> None:
     label = sha[:7]
     if branch:
         label = f"{label} ({branch})"
+    try:
+        import streamlit as st_mod
+
+        st_version = st_mod.__version__
+    except Exception:
+        st_version = ""
+    if st_version:
+        label = f"{label} · st {st_version}"
     st.markdown(
         f'<div class="rro-deploy-version">Deploy: {html.escape(label)}</div>',
         unsafe_allow_html=True,

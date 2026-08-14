@@ -32,20 +32,11 @@ def main() -> None:
 
     cutoff = (datetime.now(timezone.utc) - timedelta(days=LOOKBACK_DAYS)).isoformat()
     print(f"Building seed from {SRC}")
-    print(f"Cutoff: {cutoff} ({LOOKBACK_DAYS} days)")
+    print(f"Cutoff: {cutoff} ({LOOKBACK_DAYS} days) — skipped; seed mirrors full local DB")
 
     conn = sqlite3.connect(TMP)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = OFF")
-    conn.execute(
-        "DELETE FROM comments WHERE post_id IN (SELECT id FROM posts WHERE published_at < ?)",
-        (cutoff,),
-    )
-    conn.execute(
-        "DELETE FROM post_hashtags WHERE post_id IN (SELECT id FROM posts WHERE published_at < ?)",
-        (cutoff,),
-    )
-    conn.execute("DELETE FROM posts WHERE published_at < ?", (cutoff,))
     # Drop known local test fixtures that break image display.
     conn.execute(
         """
