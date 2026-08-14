@@ -37,6 +37,7 @@ from ui.media import (
     get_engagement_stats,
     get_image_for_search_result,
     get_local_image_path_for_result,
+    is_result_unavailable,
 )
 from ui import styles as styles_mod
 
@@ -306,6 +307,9 @@ def render_sync_result(stats) -> None:
         lines.append(f"Insights bijgewerkt: {insights_ok}")
     if insights_failed:
         lines.append(f"Insights mislukt: {insights_failed}")
+    unavailable = getattr(stats, "posts_marked_unavailable", None)
+    if unavailable:
+        lines.append(f"Posts niet meer beschikbaar: {unavailable}")
     for line in lines:
         st.caption(line)
 
@@ -386,6 +390,14 @@ def _platform_badge(platform: str) -> str:
 def _content_type_badge(label: str) -> str:
     icon = COMMENT_ICON if label == "Comment" else POST_ICON
     return f'<span class="badge badge-content badge-type">{icon}<span>{label}</span></span>'
+
+
+def _unavailable_badge() -> str:
+    return (
+        '<span class="badge badge-unavailable badge-match">'
+        "Niet meer beschikbaar"
+        "</span>"
+    )
 
 
 _MATCH_BADGE_ORDER = (
@@ -505,6 +517,7 @@ def render_result_card(result: SearchResult, query: str = "") -> None:
     """
     highlighted_text = highlight_and_snippet(result.text, query)
     safe_date = html.escape(_format_date(result.published_at))
+    unavailable = is_result_unavailable(result)
 
     image_path = get_local_image_path_for_result(result)
     image_url, image_source = get_image_for_search_result(result)
@@ -516,7 +529,14 @@ def render_result_card(result: SearchResult, query: str = "") -> None:
         image_source,
     )
 
-    if result.permalink:
+    if unavailable:
+        action_html = (
+            '<div class="rro-btn-disabled" '
+            'title="Deze post is verwijderd of niet meer bereikbaar op het platform">'
+            "Niet meer beschikbaar"
+            "</div>"
+        )
+    elif result.permalink:
         safe_link = html.escape(result.permalink, quote=True)
         action_html = (
             f'<a class="rro-btn-link" href="{safe_link}" target="_blank" '
@@ -529,12 +549,21 @@ def render_result_card(result: SearchResult, query: str = "") -> None:
     badges_html = (
         f"{_platform_badge(result.platform)}"
         f"{_content_type_badge(content_type_label)}"
+        f"{_unavailable_badge() if unavailable else ''}"
         f"{_match_badges(result, query)}"
     )
     stats_html = _stats_html(result)
+    unavailable_html = ""
+    if unavailable:
+        unavailable_html = (
+            '<div class="rro-unavailable-notice">'
+            "Deze post is verwijderd of niet meer bereikbaar op het platform."
+            "</div>"
+        )
     body_html = (
         f'<div class="rro-card-badges">{badges_html}</div>'
         f'<div class="rro-card-date">{safe_date}</div>'
+        f"{unavailable_html}"
         f'<div class="rro-card-text">{highlighted_text}</div>'
     )
 

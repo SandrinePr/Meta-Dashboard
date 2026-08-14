@@ -1142,6 +1142,23 @@ div.rro-results-totals,
     border: 1px solid rgba(161, 186, 202, 0.45);
 }
 
+.badge-unavailable {
+    background: rgba(242, 240, 236, 0.06);
+    color: var(--rro-text-muted);
+    border: 1px solid var(--rro-border);
+}
+
+.rro-unavailable-notice {
+    margin: 0 0 6px 0;
+    padding: 6px 8px;
+    border-radius: var(--rro-radius-sm);
+    border: 1px solid var(--rro-border);
+    background: rgba(242, 240, 236, 0.04);
+    color: var(--rro-text-muted);
+    font-size: 0.76rem;
+    line-height: 1.35;
+}
+
 .rro-card-date {
     color: var(--rro-text-muted);
     font-size: 0.76rem;

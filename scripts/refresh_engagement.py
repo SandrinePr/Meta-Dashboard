@@ -15,6 +15,8 @@ sys.path.insert(0, str(ROOT))
 load_dotenv(ROOT / ".env", override=True)
 
 from db.database import get_connection, initialize_database  # noqa: E402
+from db.repository import mark_post_unavailable, merge_post_raw_json  # noqa: E402
+from meta.availability import is_unavailable_meta_error  # noqa: E402
 from meta.client import MetaClient, MetaClientError, format_meta_client_error  # noqa: E402
 from meta.endpoints import (  # noqa: E402
     FACEBOOK_POST_FIELDS,
@@ -128,19 +130,36 @@ def refresh_posts(
                 insights = client.get_facebook_post_insights(external_id)
                 merged = flatten_facebook_insights(merged, insights)
         except MetaClientError as exc:
-            failed += 1
-            logger.warning(
-                "fail id=%s platform=%s: %s",
-                post_id,
-                plat,
-                format_meta_client_error(exc),
-            )
+            if is_unavailable_meta_error(exc):
+                reason = format_meta_client_error(exc)
+                with get_connection() as conn:
+                    mark_post_unavailable(conn, post_id, reason=reason)
+                    conn.commit()
+                failed += 1
+                logger.warning(
+                    "unavailable id=%s platform=%s: %s",
+                    post_id,
+                    plat,
+                    reason,
+                )
+            else:
+                failed += 1
+                logger.warning(
+                    "fail id=%s platform=%s: %s",
+                    post_id,
+                    plat,
+                    format_meta_client_error(exc),
+                )
             if getattr(exc, "error_code", None) == 190:
                 logger.error("Token probleem — stop refresh.")
                 break
             continue
 
-        new_raw = json.dumps(merged, ensure_ascii=False)
+        new_raw = merge_post_raw_json(
+            row["raw_json"],
+            json.dumps(merged, ensure_ascii=False),
+            clear_unavailable=True,
+        )
         if new_raw == (row["raw_json"] or ""):
             skipped += 1
         else:
