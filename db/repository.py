@@ -15,9 +15,18 @@ _INSIGHT_PRESERVE_KEYS = (
     "insights_saved",
     "insights_reach",
 )
+_UNAVAILABLE_PRESERVE_KEYS = (
+    "rro_unavailable",
+    "rro_unavailable_reason",
+)
 
 
-def merge_post_raw_json(existing_raw: str | None, new_raw: str | None) -> str | None:
+def merge_post_raw_json(
+    existing_raw: str | None,
+    new_raw: str | None,
+    *,
+    clear_unavailable: bool = False,
+) -> str | None:
     """Merge new post JSON onto existing, preserving Insights when missing on new."""
     if not new_raw:
         return existing_raw
@@ -34,7 +43,42 @@ def merge_post_raw_json(existing_raw: str | None, new_raw: str | None) -> str | 
     for key in _INSIGHT_PRESERVE_KEYS:
         if merged.get(key) is None and existing.get(key) is not None:
             merged[key] = existing[key]
+    if clear_unavailable:
+        merged.pop("rro_unavailable", None)
+        merged.pop("rro_unavailable_reason", None)
+    else:
+        for key in _UNAVAILABLE_PRESERVE_KEYS:
+            if merged.get(key) is None and existing.get(key) is not None:
+                merged[key] = existing[key]
     return json.dumps(merged, ensure_ascii=False)
+
+
+def mark_post_unavailable(
+    conn: sqlite3.Connection,
+    post_id: int,
+    *,
+    reason: str | None = None,
+) -> None:
+    """Flag a post as removed/unavailable on the platform (stored in raw_json)."""
+    row = conn.execute(
+        "SELECT raw_json FROM posts WHERE id = ?",
+        (post_id,),
+    ).fetchone()
+    if not row:
+        return
+    try:
+        payload = json.loads(row["raw_json"] or "{}")
+    except json.JSONDecodeError:
+        payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+    payload["rro_unavailable"] = True
+    if reason:
+        payload["rro_unavailable_reason"] = reason
+    conn.execute(
+        "UPDATE posts SET raw_json = ?, last_synced_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (json.dumps(payload, ensure_ascii=False), post_id),
+    )
 
 
 @dataclass(slots=True)
@@ -95,6 +139,7 @@ def upsert_post(
     media_type: str | None,
     published_at: str,
     raw_json: str | None,
+    clear_unavailable: bool = False,
 ) -> UpsertResult:
     """Insert or update a post."""
     existing = conn.execute(
@@ -103,7 +148,11 @@ def upsert_post(
     ).fetchone()
 
     if existing:
-        merged_raw = merge_post_raw_json(existing["raw_json"], raw_json)
+        merged_raw = merge_post_raw_json(
+            existing["raw_json"],
+            raw_json,
+            clear_unavailable=clear_unavailable,
+        )
         conn.execute(
             """
             UPDATE posts

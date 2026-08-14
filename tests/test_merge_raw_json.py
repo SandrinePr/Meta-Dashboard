@@ -30,3 +30,22 @@ def test_merge_prefers_new_insights_when_present() -> None:
     merged = json.loads(merge_post_raw_json(existing, new) or "{}")
     assert merged["insights_views"] == 250
     assert merged["like_count"] == 1
+
+
+def test_merge_preserves_unavailable_flag() -> None:
+    existing = json.dumps(
+        {"caption": "old", "rro_unavailable": True, "rro_unavailable_reason": "gone"}
+    )
+    new = json.dumps({"caption": "new", "like_count": 1})
+    merged = json.loads(merge_post_raw_json(existing, new) or "{}")
+    assert merged["rro_unavailable"] is True
+    assert merged["rro_unavailable_reason"] == "gone"
+
+
+def test_merge_clears_unavailable_when_post_is_live_again() -> None:
+    existing = json.dumps({"rro_unavailable": True, "rro_unavailable_reason": "gone"})
+    new = json.dumps({"caption": "back online"})
+    merged = json.loads(
+        merge_post_raw_json(existing, new, clear_unavailable=True) or "{}"
+    )
+    assert "rro_unavailable" not in merged

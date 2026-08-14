@@ -11,6 +11,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from db.database import get_connection
+from meta.availability import is_post_unavailable
 from meta.insights import parse_insights_metrics
 
 logger = logging.getLogger(__name__)
@@ -496,3 +497,17 @@ def get_content_type_for_result(result) -> str:
         content_type=row["content_type"],
         raw_json=row["raw_json"],
     )
+
+
+def is_result_unavailable(result) -> bool:
+    """Return True when a search result refers to a post no longer on the platform."""
+    if result.entity_type != "post":
+        return False
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT raw_json FROM posts WHERE id = ?",
+            (result.entity_id,),
+        ).fetchone()
+    if not row:
+        return False
+    return is_post_unavailable(row["raw_json"])

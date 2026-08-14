@@ -17,6 +17,7 @@ from db.repository import (
     upsert_post,
     upsert_search_index,
 )
+from meta.availability import mark_unavailable_posts
 from meta.client import MetaClient, MetaClientError, TOKEN_EXPIRED_MESSAGE, format_meta_client_error
 from meta.insights import flatten_facebook_insights, flatten_instagram_insights
 from sync.mappers import (
@@ -48,6 +49,7 @@ class SyncStats:
     facebook_comments_updated: int = 0
     insights_ok: int = 0
     insights_failed: int = 0
+    posts_marked_unavailable: int = 0
     errors: list[str] = field(default_factory=list)
 
     def merge(self, other: "SyncStats") -> None:
@@ -61,6 +63,7 @@ class SyncStats:
         self.facebook_comments_updated += other.facebook_comments_updated
         self.insights_ok += other.insights_ok
         self.insights_failed += other.insights_failed
+        self.posts_marked_unavailable += other.posts_marked_unavailable
         self.errors.extend(other.errors)
 
 
@@ -215,6 +218,7 @@ def sync_instagram(
                 media_type=post_data["media_type"],
                 published_at=post_data["published_at"],
                 raw_json=post_data["raw_json"],
+                clear_unavailable=True,
             )
             if result.created:
                 stats.instagram_posts_added += 1
@@ -402,6 +406,7 @@ def sync_facebook(
                 media_type=post_data["media_type"],
                 published_at=post_data["published_at"],
                 raw_json=post_data["raw_json"],
+                clear_unavailable=True,
             )
             if result.created:
                 stats.facebook_posts_added += 1
@@ -538,6 +543,11 @@ def run_sync(
                 phase_end=fb_end,
             )
         )
+
+    _emit(progress, "Verwijderde posts controleren…", 0.95)
+    with get_connection() as conn:
+        stats.posts_marked_unavailable = mark_unavailable_posts(client, conn)
+        conn.commit()
 
     _emit(progress, "Zoekindex opnieuw opbouwen…", 0.97)
     with get_connection() as conn:
