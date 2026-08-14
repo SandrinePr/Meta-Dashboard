@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import html
 import logging
+import os
 import re
 from datetime import date, datetime
 from typing import Iterable
@@ -255,6 +256,30 @@ def filter_results(
     return filtered
 
 
+def _render_deploy_version() -> None:
+    """Show git commit on hosted deploys so Railway/Render version is verifiable."""
+    sha = (
+        os.getenv("RAILWAY_GIT_COMMIT_SHA")
+        or os.getenv("RENDER_GIT_COMMIT")
+        or os.getenv("SOURCE_VERSION")
+    )
+    if not sha:
+        return
+    branch = (
+        os.getenv("RAILWAY_GIT_BRANCH")
+        or os.getenv("RENDER_GIT_BRANCH")
+        or os.getenv("RAILWAY_ENVIRONMENT_NAME")
+        or ""
+    )
+    label = sha[:7]
+    if branch:
+        label = f"{label} ({branch})"
+    st.markdown(
+        f'<div class="rro-deploy-version">Deploy: {html.escape(label)}</div>',
+        unsafe_allow_html=True,
+    )
+
+
 def render_sidebar_stats(totals: dict) -> None:
     """Render sidebar sync statistics with icons."""
     st.markdown('<div class="rro-sidebar-title">Synchronisatie</div>', unsafe_allow_html=True)
@@ -283,6 +308,7 @@ def render_sidebar_stats(totals: dict) -> None:
         "</div>",
         unsafe_allow_html=True,
     )
+    _render_deploy_version()
 
 
 def render_sync_result(stats) -> None:

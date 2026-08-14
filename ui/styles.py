@@ -391,6 +391,14 @@ section[data-testid="stSidebar"] .stButton > button p {
     word-break: break-all;
 }
 
+.rro-deploy-version {
+    margin: 0 0 0.75rem 0;
+    color: var(--rro-text-muted) !important;
+    font-size: 0.68rem;
+    letter-spacing: 0.02em;
+    opacity: 0.85;
+}
+
 /* Zoeken-header (geen aparte nested card; zit in hoofdkaart) */
 [data-testid="stMain"] [data-testid="stVerticalBlock"]:has(.rro-search-form-header) {
     background: transparent;
