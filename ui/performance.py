@@ -25,6 +25,27 @@ def _format_count(value: int) -> str:
     return f"{value:,}".replace(",", ".")
 
 
+def build_month_select_options(
+    months: list[tuple[int, int]],
+    post_counts: dict[tuple[int, int], int],
+) -> tuple[list[str], dict[str, tuple[int, int]], int]:
+    """Build selectbox labels, lookup map, and default index (latest month with posts)."""
+    month_labels: list[str] = []
+    label_to_month: dict[str, tuple[int, int]] = {}
+    for year, month in months:
+        base = format_month_label(year, month)
+        count = post_counts.get((year, month), 0)
+        label = base if count else f"{base} (nog geen posts)"
+        month_labels.append(label)
+        label_to_month[label] = (year, month)
+
+    default_index = next(
+        (index for index, ym in enumerate(months) if post_counts.get(ym, 0) > 0),
+        0,
+    )
+    return month_labels, label_to_month, default_index
+
+
 def _top_post_as_result(post: TopPost) -> SearchResult:
     return SearchResult(
         platform=post.platform,
@@ -88,18 +109,10 @@ def render_performance_tab() -> None:
         return
 
     post_counts = get_month_post_counts()
-    month_labels: list[str] = []
-    label_to_month: dict[str, tuple[int, int]] = {}
-    default_index = 0
-    for index, (year, month) in enumerate(months):
-        base = format_month_label(year, month)
-        count = post_counts.get((year, month), 0)
-        label = base if count else f"{base} (nog geen posts)"
-        month_labels.append(label)
-        label_to_month[label] = (year, month)
-        if count > 0:
-            default_index = index
-            break
+    month_labels, label_to_month, default_index = build_month_select_options(
+        months,
+        post_counts,
+    )
 
     latest_month = get_latest_post_month()
     latest_label = format_month_label(*latest_month) if latest_month else None
