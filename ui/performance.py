@@ -118,7 +118,7 @@ def render_performance_tab() -> None:
     latest_label = format_month_label(*latest_month) if latest_month else None
 
     st.markdown(
-        '<div class="rro-search-form-header"><h3>Top posts per maand</h3></div>',
+        '<div class="rro-search-form-header"><h3>Performance per month</h3></div>',
         unsafe_allow_html=True,
     )
     st.caption(

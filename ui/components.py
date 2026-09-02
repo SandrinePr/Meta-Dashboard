@@ -291,7 +291,7 @@ def _render_deploy_version() -> None:
 def render_performance_sidebar_button(is_active: bool) -> None:
     """Toggle the monthly performance view from the sidebar."""
     if st.button(
-        "Top posts per maand",
+        "Performance per month",
         type="primary" if is_active else "secondary",
         use_container_width=True,
         key="nav_performance",
