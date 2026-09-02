@@ -17,7 +17,9 @@ from analytics.performance import (
     get_month_post_counts,
     get_monthly_top_posts,
 )
+from config import get_settings
 from search.engine import SearchResult
+from sync.engagement_refresh import refresh_month_insights
 from ui.components import render_result_card
 
 
@@ -160,6 +162,17 @@ def render_performance_tab() -> None:
             f"Geen posts in **{format_month_label(year, month)}**.{latest_hint} "
             "Klik **Synchroniseer Meta** in de zijbalk om recente posts op te halen."
         )
+
+    insights_cache_key = f"{year:04d}-{month:02d}:{','.join(sorted(platforms))}"
+    settings = get_settings()
+    if (
+        post_count > 0
+        and settings.meta_page_access_token
+        and st.session_state.get("performance_insights_key") != insights_cache_key
+    ):
+        with st.spinner("Weergaven bijwerken…"):
+            refresh_month_insights(year, month, platforms=platforms)
+        st.session_state.performance_insights_key = insights_cache_key
 
     with st.spinner("Ranglijsten laden…"):
         ranked = get_monthly_top_posts(
