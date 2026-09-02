@@ -1411,20 +1411,6 @@ section[data-testid="stSidebar"] .stButton > button[kind="secondary"]:hover {
     border-bottom: 2px solid var(--rro-cta) !important;
 }
 
-.rro-perf-context {
-    margin: 0.75rem 0 1rem 0;
-    padding: 10px 14px;
-    border-radius: var(--rro-radius-sm);
-    border: 1px solid var(--rro-border);
-    background: rgba(49, 57, 69, 0.55);
-    color: var(--rro-text-muted);
-    font-size: 0.84rem;
-}
-
-.rro-perf-context strong {
-    color: var(--rro-text);
-}
-
 .rro-perf-section-header {
     margin: 1.5rem 0 0.85rem 0;
     padding-bottom: 0.35rem;

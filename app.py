@@ -47,7 +47,6 @@ def main() -> None:
         '<h1 class="rro-page-title">Social Media Search Dashboard</h1>',
         unsafe_allow_html=True,
     )
-    st.caption("Zoek lokaal in gesynchroniseerde Instagram- en Facebook-content.")
     st.markdown(
         '<div class="rro-mobile-sync-hint">'
         'Synchronisatie staat in de zijbalk — tik linksboven op '
@@ -128,6 +127,7 @@ def main() -> None:
 
 
 def _render_search_tab() -> None:
+    st.caption("Zoek lokaal in gesynchroniseerde Instagram- en Facebook-content.")
     query, platforms, entity_types, date_range = render_search_form()
     trimmed = query.strip()
 
