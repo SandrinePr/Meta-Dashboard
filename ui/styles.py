@@ -1434,22 +1434,7 @@ a.rro-btn-link:focus-visible {
     padding: 10px 12px;
     border-radius: var(--rro-radius-sm);
     border: 1px solid var(--rro-border);
-    background: rgba(242, 240, 236, 0.04);
-}
-
-.rro-perf-rank-banner--1 {
-    border-color: rgba(201, 162, 39, 0.55);
-    background: rgba(201, 162, 39, 0.1);
-}
-
-.rro-perf-rank-banner--2 {
-    border-color: rgba(168, 176, 188, 0.45);
-    background: rgba(168, 176, 188, 0.08);
-}
-
-.rro-perf-rank-banner--3 {
-    border-color: rgba(184, 120, 68, 0.45);
-    background: rgba(184, 120, 68, 0.08);
+    background: #313945;
 }
 
 .rro-perf-rank-line {
@@ -1466,7 +1451,7 @@ a.rro-btn-link:focus-visible {
 }
 
 .rro-perf-rank-value {
-    color: var(--rro-cta);
+    color: var(--rro-text);
     font-weight: 800;
 }
 

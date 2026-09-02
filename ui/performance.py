@@ -38,7 +38,7 @@ def _top_post_as_result(post: TopPost) -> SearchResult:
 def _rank_banner_html(post: TopPost, rank: int) -> str:
     metric_label = METRIC_LABELS[post.metric]
     return (
-        f'<div class="rro-perf-rank-banner rro-perf-rank-banner--{rank}">'
+        f'<div class="rro-perf-rank-banner">'
         f'<span class="rro-perf-rank-line">'
         f'<span class="rro-perf-rank-badge">#{rank}</span>'
         f" · {html.escape(metric_label)}: "
@@ -74,7 +74,6 @@ def render_performance_metric_section(metric: str, posts: list[TopPost]) -> None
             _top_post_as_result(post),
             full_text=True,
             rank_banner_html=_rank_banner_html(post, rank),
-            highlight_metric=post.metric,
         )
 
 
