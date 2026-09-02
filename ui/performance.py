@@ -118,17 +118,6 @@ def render_performance_tab() -> None:
     latest_label = format_month_label(*latest_month) if latest_month else None
 
     st.markdown(
-        '<div class="rro-search-form-header"><h3>Performance per month</h3></div>',
-        unsafe_allow_html=True,
-    )
-    st.caption(
-        "Bekijk per kalendermaand welke posts het best presteerden op weergaven, "
-        "likes, reacties, opgeslagen en gedeeld."
-    )
-    if latest_label:
-        st.caption(f"Laatste posts in database: **{latest_label}**.")
-
-    st.markdown(
         '<div class="rro-filter-block-anchor" aria-hidden="true"></div>',
         unsafe_allow_html=True,
     )
@@ -159,13 +148,6 @@ def render_performance_tab() -> None:
     if not platforms:
         st.warning("Selecteer minstens één platform.")
         return
-
-    st.markdown(
-        f'<div class="rro-perf-context">'
-        f"Ranglijsten voor <strong>{html.escape(selected_label)}</strong>"
-        f"</div>",
-        unsafe_allow_html=True,
-    )
 
     post_count = count_posts_for_month(year, month, platforms=platforms)
     if post_count == 0:
@@ -202,8 +184,3 @@ def render_performance_tab() -> None:
         if index > 0:
             st.markdown('<hr class="rro-perf-section-divider">', unsafe_allow_html=True)
         render_performance_metric_section(metric, ranked[metric])
-
-    st.caption(
-        "Cijfers komen uit de laatst gesynchroniseerde Meta-data. "
-        "Posts zonder metric staan niet in de ranglijst."
-    )
