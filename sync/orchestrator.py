@@ -176,9 +176,7 @@ def sync_instagram(
                 _emit(progress, f"Instagram: post {idx}/{total}", fraction)
 
             published_preview = parse_published_at(raw_post.get("timestamp"))
-            fetch_insights = full or _is_within_days(
-                published_preview, RECENT_INSIGHTS_DAYS
-            )
+            fetch_insights = not insights_stopped
 
             media_id = str(raw_post.get("id") or "")
             if media_id and fetch_insights and not insights_stopped:
@@ -365,9 +363,7 @@ def sync_facebook(
                 _emit(progress, f"Facebook: post {idx}/{total}", fraction)
 
             published_preview = parse_published_at(raw_post.get("created_time"))
-            fetch_insights = full or _is_within_days(
-                published_preview, RECENT_INSIGHTS_DAYS
-            )
+            fetch_insights = not insights_stopped
 
             post_id = str(raw_post.get("id") or "")
             if post_id and fetch_insights and not insights_stopped:
@@ -503,9 +499,9 @@ def run_sync(
 ) -> SyncStats:
     """Run sync for instagram, facebook, or all platforms.
 
-    Fast mode (default): updates all posts/likes in the lookback window, but only
-    fetches Insights for the last ~30 days and comments for new/recent (~14 days)
-    posts. Use full=True for exhaustive Insights+comments on every post.
+    Fast mode (default): updates all posts/likes/views in the lookback window and
+    fetches Insights for every post, but only fetches comments for new/recent
+    (~14 days) posts. Use full=True for exhaustive comments on every post.
     """
     initialize_database()
     client = MetaClient.from_settings()
