@@ -1414,28 +1414,13 @@ a.rro-btn-link:focus-visible {
 }
 
 .rro-perf-section-header {
-    display: flex;
-    align-items: center;
-    gap: 10px;
     margin: 1.5rem 0 0.85rem 0;
     padding-bottom: 0.35rem;
     border-bottom: 1px solid var(--rro-border);
-}
-
-.rro-perf-section-header h3 {
-    margin: 0;
-    flex: 1;
     color: var(--rro-text);
     font-size: 1.15rem;
     font-weight: 700;
-}
-
-.rro-perf-section-sub {
-    color: var(--rro-text-muted);
-    font-size: 0.72rem;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
+    line-height: 1.35;
 }
 
 .rro-perf-section-divider {
@@ -1445,9 +1430,6 @@ a.rro-btn-link:focus-visible {
 }
 
 .rro-perf-rank-banner {
-    display: flex;
-    align-items: center;
-    gap: 10px;
     margin: 0 0 12px 0;
     padding: 10px 12px;
     border-radius: var(--rro-radius-sm);
@@ -1470,47 +1452,22 @@ a.rro-btn-link:focus-visible {
     background: rgba(184, 120, 68, 0.08);
 }
 
-.rro-perf-rank-badge {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 36px;
-    height: 28px;
-    padding: 0 10px;
-    border-radius: 999px;
-    background: rgba(242, 240, 236, 0.1);
-    color: var(--rro-text);
-    font-size: 0.82rem;
-    font-weight: 800;
-}
-
-.rro-perf-rank-banner--1 .rro-perf-rank-badge {
-    background: rgba(201, 162, 39, 0.25);
-    color: #f3df9a;
-}
-
-.rro-perf-rank-banner--2 .rro-perf-rank-badge {
-    background: rgba(168, 176, 188, 0.2);
-    color: #dbe2ea;
-}
-
-.rro-perf-rank-banner--3 .rro-perf-rank-badge {
-    background: rgba(184, 120, 68, 0.22);
-    color: #e8c4a0;
-}
-
-.rro-perf-rank-text {
-    flex: 1;
+.rro-perf-rank-line {
+    display: block;
     color: var(--rro-text-muted);
-    font-size: 0.82rem;
+    font-size: 0.86rem;
     font-weight: 600;
+    line-height: 1.45;
+}
+
+.rro-perf-rank-badge {
+    color: var(--rro-text);
+    font-weight: 800;
 }
 
 .rro-perf-rank-value {
     color: var(--rro-cta);
-    font-size: 1.05rem;
     font-weight: 800;
-    white-space: nowrap;
 }
 
 .rro-performance-empty {

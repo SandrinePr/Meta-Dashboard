@@ -16,21 +16,6 @@ from analytics.performance import (
 )
 from search.engine import SearchResult
 from ui.components import render_result_card
-from ui.icons import (
-    HEART_STAT_ICON,
-    MESSAGE_STAT_ICON,
-    SAVE_STAT_ICON,
-    SHARE_STAT_ICON,
-    VIEW_STAT_ICON,
-)
-
-_METRIC_ICONS = {
-    "views": VIEW_STAT_ICON,
-    "likes": HEART_STAT_ICON,
-    "comments": MESSAGE_STAT_ICON,
-    "saves": SAVE_STAT_ICON,
-    "shares": SHARE_STAT_ICON,
-}
 
 
 def _format_count(value: int) -> str:
@@ -52,29 +37,26 @@ def _top_post_as_result(post: TopPost) -> SearchResult:
 
 def _rank_banner_html(post: TopPost, rank: int) -> str:
     metric_label = METRIC_LABELS[post.metric]
-    icon = _METRIC_ICONS.get(post.metric, "")
     return (
         f'<div class="rro-perf-rank-banner rro-perf-rank-banner--{rank}">'
+        f'<span class="rro-perf-rank-line">'
         f'<span class="rro-perf-rank-badge">#{rank}</span>'
-        f"{icon}"
-        f'<span class="rro-perf-rank-text">'
-        f"Meeste {html.escape(metric_label.lower())} deze maand"
+        f" · {html.escape(metric_label)}: "
+        f'<strong class="rro-perf-rank-value">'
+        f"{html.escape(_format_count(post.metric_value))}"
+        f"</strong>"
         f"</span>"
-        f'<span class="rro-perf-rank-value">{html.escape(_format_count(post.metric_value))}</span>'
         f"</div>"
     )
 
 
 def render_performance_metric_section(metric: str, posts: list[TopPost]) -> None:
     """Render one metric block with up to three full result cards."""
-    icon = _METRIC_ICONS.get(metric, "")
     label = METRIC_LABELS[metric]
     st.markdown(
-        f'<div class="rro-perf-section-header">'
-        f"{icon}"
-        f"<h3>{html.escape(label)}</h3>"
-        f'<span class="rro-perf-section-sub">Top 3</span>'
-        f"</div>",
+        f'<h3 class="rro-perf-section-header">'
+        f"{html.escape(label)} · top 3"
+        f"</h3>",
         unsafe_allow_html=True,
     )
 
