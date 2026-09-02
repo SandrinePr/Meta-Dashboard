@@ -13,6 +13,8 @@ from analytics.performance import (
     count_posts_for_month,
     format_month_label,
     get_available_months,
+    get_latest_post_month,
+    get_month_post_counts,
     get_monthly_top_posts,
 )
 from search.engine import SearchResult
@@ -85,11 +87,22 @@ def render_performance_tab() -> None:
         st.info("Nog geen posts beschikbaar om prestaties per maand te tonen.")
         return
 
-    month_labels = [format_month_label(year, month) for year, month in months]
-    label_to_month = {
-        label: (year, month)
-        for label, (year, month) in zip(month_labels, months, strict=True)
-    }
+    post_counts = get_month_post_counts()
+    month_labels: list[str] = []
+    label_to_month: dict[str, tuple[int, int]] = {}
+    default_index = 0
+    for index, (year, month) in enumerate(months):
+        base = format_month_label(year, month)
+        count = post_counts.get((year, month), 0)
+        label = base if count else f"{base} (nog geen posts)"
+        month_labels.append(label)
+        label_to_month[label] = (year, month)
+        if count > 0:
+            default_index = index
+            break
+
+    latest_month = get_latest_post_month()
+    latest_label = format_month_label(*latest_month) if latest_month else None
 
     st.markdown(
         '<div class="rro-search-form-header"><h3>Top posts per maand</h3></div>',
@@ -99,6 +112,8 @@ def render_performance_tab() -> None:
         "Bekijk per kalendermaand welke posts het best presteerden op weergaven, "
         "likes, reacties, opgeslagen en gedeeld."
     )
+    if latest_label:
+        st.caption(f"Laatste posts in database: **{latest_label}**.")
 
     st.markdown(
         '<div class="rro-filter-block-anchor" aria-hidden="true"></div>',
@@ -106,11 +121,13 @@ def render_performance_tab() -> None:
     )
     filter_cols = st.columns(2, gap="small")
     with filter_cols[0]:
+        if "performance_month" not in st.session_state:
+            st.session_state.performance_month = month_labels[default_index]
         selected_label = st.selectbox(
             "Maand",
             month_labels,
             key="performance_month",
-            help="Kalendermaand waarop de post is gepubliceerd.",
+            help="Maanden zonder posts staan apart vermeld. Sync ophaalt nieuwere content.",
         )
     with filter_cols[1]:
         platform_labels = st.multiselect(
@@ -139,9 +156,14 @@ def render_performance_tab() -> None:
 
     post_count = count_posts_for_month(year, month, platforms=platforms)
     if post_count == 0:
+        latest_hint = (
+            f" Laatste beschikbare maand: **{latest_label}**."
+            if latest_month
+            else ""
+        )
         st.info(
-            f"Nog geen posts in {selected_label}. "
-            "Gebruik **Synchroniseer Meta** in de zijbalk om recente content op te halen."
+            f"Geen posts in **{format_month_label(year, month)}**.{latest_hint} "
+            "Klik **Synchroniseer Meta** in de zijbalk om recente posts op te halen."
         )
 
     with st.spinner("Ranglijsten laden…"):
