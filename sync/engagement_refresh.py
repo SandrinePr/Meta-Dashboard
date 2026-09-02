@@ -65,6 +65,7 @@ def refresh_post_insights(
     platform: str,
     external_id: str,
     raw_json: str | None,
+    insights_only: bool = False,
 ) -> tuple[str | None, MetaClientError | None]:
     """Fetch fresh insights for one post. Returns merged raw_json or an error."""
     try:
@@ -76,35 +77,41 @@ def refresh_post_insights(
 
     try:
         if platform == "instagram":
-            fresh = client.get_json(external_id, params={"fields": IG_FIELDS})
-            merged = _merge_engagement(existing, fresh, IG_ENGAGEMENT_KEYS)
-            for key in (
-                "id",
-                "caption",
-                "media_type",
-                "media_product_type",
-                "permalink",
-                "timestamp",
-            ):
-                if key in fresh:
-                    merged[key] = fresh[key]
+            if insights_only:
+                merged = dict(existing)
+            else:
+                fresh = client.get_json(external_id, params={"fields": IG_FIELDS})
+                merged = _merge_engagement(existing, fresh, IG_ENGAGEMENT_KEYS)
+                for key in (
+                    "id",
+                    "caption",
+                    "media_type",
+                    "media_product_type",
+                    "permalink",
+                    "timestamp",
+                ):
+                    if key in fresh:
+                        merged[key] = fresh[key]
             insights = client.get_instagram_media_insights(external_id)
             merged = _apply_instagram_insight_fields(
                 flatten_instagram_insights(merged, insights)
             )
         elif platform == "facebook":
-            fresh = client.get_json(external_id, params={"fields": FB_FIELDS})
-            merged = _merge_engagement(existing, fresh, FB_ENGAGEMENT_KEYS)
-            for key in (
-                "id",
-                "message",
-                "created_time",
-                "permalink_url",
-                "full_picture",
-                "attachments",
-            ):
-                if key in fresh:
-                    merged[key] = fresh[key]
+            if insights_only:
+                merged = dict(existing)
+            else:
+                fresh = client.get_json(external_id, params={"fields": FB_FIELDS})
+                merged = _merge_engagement(existing, fresh, FB_ENGAGEMENT_KEYS)
+                for key in (
+                    "id",
+                    "message",
+                    "created_time",
+                    "permalink_url",
+                    "full_picture",
+                    "attachments",
+                ):
+                    if key in fresh:
+                        merged[key] = fresh[key]
             insights = client.get_facebook_post_insights(external_id)
             merged = flatten_facebook_insights(merged, insights)
         else:
@@ -124,6 +131,7 @@ def refresh_post_rows(
     rows: list[dict],
     *,
     client: MetaClient | None = None,
+    insights_only: bool = False,
 ) -> RefreshInsightsStats:
     """Refresh insights for database post rows (id, platform, external_id, raw_json)."""
     stats = RefreshInsightsStats()
@@ -144,6 +152,7 @@ def refresh_post_rows(
             platform=platform,
             external_id=external_id,
             raw_json=raw_json,
+            insights_only=insights_only,
         )
         if error is not None:
             if is_unavailable_meta_error(error):
@@ -180,6 +189,7 @@ def refresh_month_insights(
     month: int,
     *,
     platforms: set[str] | None = None,
+    insights_only: bool = False,
 ) -> RefreshInsightsStats:
     """Refresh insights for all posts published in a calendar month."""
     settings = get_settings()
@@ -202,6 +212,6 @@ def refresh_month_insights(
         rows = [dict(row) for row in conn.execute(query, params).fetchall()]
 
     try:
-        return refresh_post_rows(rows)
+        return refresh_post_rows(rows, insights_only=insights_only)
     except MetaClientError:
         return RefreshInsightsStats(failed=len(rows))
