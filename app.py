@@ -14,9 +14,9 @@ from sync import get_sync_summary, run_sync
 from ui.components import (
     MIN_QUERY_LENGTH,
     inject_styles,
+    render_performance_sidebar_button,
     render_results_section,
     render_search_form,
-    render_sidebar_nav,
     render_sidebar_stats,
     render_sync_result,
 )
@@ -67,7 +67,6 @@ def main() -> None:
     with st.sidebar:
         render_sidebar_stats(totals)
         render_sync_result(st.session_state.last_sync_stats)
-        active_page = render_sidebar_nav(st.session_state.dashboard_page)
 
         sync_clicked = st.button(
             "Synchroniseer Meta",
@@ -118,7 +117,11 @@ def main() -> None:
                 st.session_state.sync_running = False
             st.rerun()
 
-    if active_page == "performance":
+        render_performance_sidebar_button(
+            st.session_state.dashboard_page == "performance"
+        )
+
+    if st.session_state.dashboard_page == "performance":
         render_performance_tab()
     else:
         _render_search_tab()
