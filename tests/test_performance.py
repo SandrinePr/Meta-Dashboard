@@ -144,3 +144,17 @@ def test_get_available_months_newest_first(tmp_path: Path, monkeypatch) -> None:
 
 def test_months_between_inclusive() -> None:
     assert _months_between((2026, 3), (2026, 1)) == [(2026, 3), (2026, 2), (2026, 1)]
+
+
+def test_build_month_select_options_includes_all_months() -> None:
+    from ui.performance import build_month_select_options
+
+    months = [(2026, 9), (2026, 8), (2026, 7), (2026, 6)]
+    post_counts = {(2026, 9): 2, (2026, 8): 31, (2026, 7): 61, (2026, 6): 86}
+    labels, label_to_month, default_index = build_month_select_options(months, post_counts)
+
+    assert len(labels) == 4
+    assert labels[0] == "september 2026"
+    assert labels[1] == "augustus 2026"
+    assert default_index == 0
+    assert label_to_month["augustus 2026"] == (2026, 8)
