@@ -10,6 +10,7 @@ from analytics.performance import (
     METRIC_KEYS,
     METRIC_LABELS,
     TopPost,
+    count_posts_for_month,
     format_month_label,
     get_available_months,
     get_monthly_top_posts,
@@ -135,6 +136,13 @@ def render_performance_tab() -> None:
         f"</div>",
         unsafe_allow_html=True,
     )
+
+    post_count = count_posts_for_month(year, month, platforms=platforms)
+    if post_count == 0:
+        st.info(
+            f"Nog geen posts in {selected_label}. "
+            "Gebruik **Synchroniseer Meta** in de zijbalk om recente content op te halen."
+        )
 
     with st.spinner("Ranglijsten laden…"):
         ranked = get_monthly_top_posts(

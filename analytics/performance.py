@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 
 from db.database import get_connection
 from meta.availability import is_post_unavailable
@@ -62,24 +63,42 @@ def parse_month_key(key: str) -> tuple[int, int]:
     return int(year_str), int(month_str)
 
 
-def get_available_months() -> list[tuple[int, int]]:
-    """Return calendar months that have posts, newest first."""
+def _months_between(newest: tuple[int, int], oldest: tuple[int, int]) -> list[tuple[int, int]]:
+    """Return inclusive month range, newest first."""
+    y, m = newest
+    end_y, end_m = oldest
+    months: list[tuple[int, int]] = []
+    while (y, m) >= (end_y, end_m):
+        months.append((y, m))
+        m -= 1
+        if m == 0:
+            m = 12
+            y -= 1
+    return months
+
+
+def get_available_months(*, today: date | None = None) -> list[tuple[int, int]]:
+    """Return selectable calendar months from first post month through today."""
     with get_connection() as conn:
-        rows = conn.execute(
+        row = conn.execute(
             """
-            SELECT DISTINCT strftime('%Y-%m', published_at) AS ym
+            SELECT
+                MIN(strftime('%Y-%m', published_at)) AS min_ym,
+                MAX(strftime('%Y-%m', published_at)) AS max_ym
             FROM posts
             WHERE published_at IS NOT NULL AND published_at != ''
-            ORDER BY ym DESC
             """
-        ).fetchall()
-    months: list[tuple[int, int]] = []
-    for row in rows:
-        ym = row["ym"]
-        if not ym:
-            continue
-        months.append(parse_month_key(ym))
-    return months
+        ).fetchone()
+
+    current_date = today or date.today()
+    current = (current_date.year, current_date.month)
+    if not row or not row["min_ym"]:
+        return [current]
+
+    earliest = parse_month_key(row["min_ym"])
+    latest_db = parse_month_key(row["max_ym"]) if row["max_ym"] else earliest
+    latest = max(latest_db, current)
+    return _months_between(latest, earliest)
 
 
 def _fetch_posts_for_month(
@@ -159,3 +178,13 @@ def get_monthly_top_posts(
         ranked[metric] = candidates[:limit]
 
     return ranked
+
+
+def count_posts_for_month(
+    year: int,
+    month: int,
+    *,
+    platforms: set[str] | None = None,
+) -> int:
+    """Return number of available posts published in the given month."""
+    return len(_fetch_posts_for_month(year, month, platforms=platforms))

@@ -1378,6 +1378,18 @@ a.rro-btn-link:focus-visible {
     }
 }
 
+section[data-testid="stSidebar"] .stButton > button[kind="secondary"] {
+    background: transparent !important;
+    color: var(--rro-text-muted) !important;
+    border: 1px solid var(--rro-border) !important;
+}
+
+section[data-testid="stSidebar"] .stButton > button[kind="secondary"]:hover {
+    background: var(--rro-input) !important;
+    color: var(--rro-text) !important;
+    border-color: var(--rro-border) !important;
+}
+
 /* Tabs: Zoeken / Beste prestaties */
 .stTabs [data-baseweb="tab-list"] {
     gap: 8px;
