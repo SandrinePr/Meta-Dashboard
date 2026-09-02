@@ -101,6 +101,42 @@ def get_available_months(*, today: date | None = None) -> list[tuple[int, int]]:
     return _months_between(latest, earliest)
 
 
+def get_month_post_counts() -> dict[tuple[int, int], int]:
+    """Return post counts keyed by ``(year, month)``."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT strftime('%Y-%m', published_at) AS ym, COUNT(*) AS c
+            FROM posts
+            WHERE published_at IS NOT NULL AND published_at != ''
+            GROUP BY ym
+            """
+        ).fetchall()
+    counts: dict[tuple[int, int], int] = {}
+    for row in rows:
+        ym = row["ym"]
+        if ym:
+            counts[parse_month_key(ym)] = int(row["c"])
+    return counts
+
+
+def get_latest_post_month() -> tuple[int, int] | None:
+    """Return the calendar month of the newest stored post."""
+    with get_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT strftime('%Y-%m', published_at) AS ym
+            FROM posts
+            WHERE published_at IS NOT NULL AND published_at != ''
+            ORDER BY published_at DESC
+            LIMIT 1
+            """
+        ).fetchone()
+    if not row or not row["ym"]:
+        return None
+    return parse_month_key(row["ym"])
+
+
 def _fetch_posts_for_month(
     year: int,
     month: int,
