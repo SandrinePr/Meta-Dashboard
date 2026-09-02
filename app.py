@@ -19,6 +19,7 @@ from ui.components import (
     render_sidebar_stats,
     render_sync_result,
 )
+from ui.performance import render_performance_tab
 
 logger = logging.getLogger(__name__)
 
@@ -113,6 +114,16 @@ def main() -> None:
                 st.session_state.sync_running = False
             st.rerun()
 
+    tab_search, tab_performance = st.tabs(["Zoeken", "Top posts per maand"])
+
+    with tab_search:
+        _render_search_tab()
+
+    with tab_performance:
+        render_performance_tab()
+
+
+def _render_search_tab() -> None:
     query, platforms, entity_types, date_range = render_search_form()
     trimmed = query.strip()
 
