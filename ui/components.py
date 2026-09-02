@@ -288,6 +288,32 @@ def _render_deploy_version() -> None:
     )
 
 
+def render_sidebar_nav(active_page: str) -> str:
+    """Render sidebar page navigation; returns selected page key."""
+    st.markdown('<div class="rro-sidebar-title">Navigatie</div>', unsafe_allow_html=True)
+    search_type = "primary" if active_page == "search" else "secondary"
+    performance_type = "primary" if active_page == "performance" else "secondary"
+
+    if st.button(
+        "Zoeken",
+        type=search_type,
+        use_container_width=True,
+        key="nav_search",
+    ):
+        st.session_state.dashboard_page = "search"
+        st.rerun()
+    if st.button(
+        "Top posts per maand",
+        type=performance_type,
+        use_container_width=True,
+        key="nav_performance",
+    ):
+        st.session_state.dashboard_page = "performance"
+        st.rerun()
+
+    return st.session_state.dashboard_page
+
+
 def render_sidebar_stats(totals: dict) -> None:
     """Render sidebar sync statistics with icons."""
     st.markdown('<div class="rro-sidebar-title">Synchronisatie</div>', unsafe_allow_html=True)

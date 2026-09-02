@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+from datetime import date
 from pathlib import Path
 
 from analytics.performance import (
+    _months_between,
     format_month_label,
     get_available_months,
     get_monthly_top_posts,
@@ -133,4 +135,12 @@ def test_get_available_months_newest_first(tmp_path: Path, monkeypatch) -> None:
         )
         conn.commit()
 
-    assert get_available_months() == [(2026, 3), (2026, 1)]
+    months = get_available_months(today=date(2026, 9, 2))
+    assert months[0] == (2026, 9)
+    assert months[-1] == (2026, 1)
+    assert (2026, 8) in months
+    assert (2026, 2) in months
+
+
+def test_months_between_inclusive() -> None:
+    assert _months_between((2026, 3), (2026, 1)) == [(2026, 3), (2026, 2), (2026, 1)]

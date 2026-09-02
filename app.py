@@ -16,6 +16,7 @@ from ui.components import (
     inject_styles,
     render_results_section,
     render_search_form,
+    render_sidebar_nav,
     render_sidebar_stats,
     render_sync_result,
 )
@@ -60,10 +61,13 @@ def main() -> None:
 
     if "last_sync_stats" not in st.session_state:
         st.session_state.last_sync_stats = None
+    if "dashboard_page" not in st.session_state:
+        st.session_state.dashboard_page = "search"
 
     with st.sidebar:
         render_sidebar_stats(totals)
         render_sync_result(st.session_state.last_sync_stats)
+        active_page = render_sidebar_nav(st.session_state.dashboard_page)
 
         sync_clicked = st.button(
             "Synchroniseer Meta",
@@ -114,13 +118,10 @@ def main() -> None:
                 st.session_state.sync_running = False
             st.rerun()
 
-    tab_search, tab_performance = st.tabs(["Zoeken", "Top posts per maand"])
-
-    with tab_search:
-        _render_search_tab()
-
-    with tab_performance:
+    if active_page == "performance":
         render_performance_tab()
+    else:
+        _render_search_tab()
 
 
 def _render_search_tab() -> None:
