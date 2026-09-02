@@ -500,7 +500,7 @@ def _stat_items_html(
     return items
 
 
-def _stats_html(result: SearchResult) -> str:
+def _stats_html(result: SearchResult, highlight_metric: str | None = None) -> str:
     """Render engagement stats for a result card."""
     stats = get_engagement_stats(result)
     if result.entity_type != "post":
@@ -524,7 +524,8 @@ def _stats_html(result: SearchResult) -> str:
             continue
         if key in stats:
             value_html = (
-                f'<span class="rro-stat-value-inline">'
+                f'<span class="rro-stat-value-inline'
+                f'{" rro-stat-value-inline--highlight" if key == highlight_metric else ""}">'
                 f"{html.escape(str(stats[key]))}</span>"
             )
         elif key in force_missing:
@@ -543,13 +544,25 @@ def _stats_html(result: SearchResult) -> str:
     return f'<div class="rro-card-stats">{"".join(items)}</div>'
 
 
-def render_result_card(result: SearchResult, query: str = "") -> None:
+def render_result_card(
+    result: SearchResult,
+    query: str = "",
+    *,
+    full_text: bool = False,
+    rank_banner_html: str | None = None,
+    highlight_metric: str | None = None,
+) -> None:
     """Render one search result card in RRO style.
 
     Thumbnails are shown via ``st.image`` from local files so Streamlit does not
     strip/break large data-URI ``<img>`` tags inside markdown.
     """
-    highlighted_text = highlight_and_snippet(result.text, query)
+    if full_text:
+        highlighted_text = highlight_hashtags_in_text(result.text)
+        text_class = "rro-card-text rro-card-text--full"
+    else:
+        highlighted_text = highlight_and_snippet(result.text, query)
+        text_class = "rro-card-text"
     safe_date = html.escape(_format_date(result.published_at))
     unavailable = is_result_unavailable(result)
 
@@ -586,7 +599,7 @@ def render_result_card(result: SearchResult, query: str = "") -> None:
         f"{_unavailable_badge() if unavailable else ''}"
         f"{_match_badges(result, query)}"
     )
-    stats_html = _stats_html(result)
+    stats_html = _stats_html(result, highlight_metric=highlight_metric)
     unavailable_html = ""
     if unavailable:
         unavailable_html = (
@@ -598,10 +611,12 @@ def render_result_card(result: SearchResult, query: str = "") -> None:
         f'<div class="rro-card-badges">{badges_html}</div>'
         f'<div class="rro-card-date">{safe_date}</div>'
         f"{unavailable_html}"
-        f'<div class="rro-card-text">{highlighted_text}</div>'
+        f'<div class="{text_class}">{highlighted_text}</div>'
     )
 
     with st.container(border=True):
+        if rank_banner_html:
+            st.markdown(rank_banner_html, unsafe_allow_html=True)
         st.markdown(
             '<div class="rro-result-card-marker" aria-hidden="true"></div>',
             unsafe_allow_html=True,
