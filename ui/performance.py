@@ -123,7 +123,7 @@ def render_performance_tab() -> None:
         '<div class="rro-filter-block-anchor" aria-hidden="true"></div>',
         unsafe_allow_html=True,
     )
-    filter_cols = st.columns(2, gap="small")
+    filter_cols = st.columns([2, 2, 1], gap="small")
     with filter_cols[0]:
         if "performance_month" not in st.session_state:
             st.session_state.performance_month = month_labels[default_index]
@@ -131,7 +131,7 @@ def render_performance_tab() -> None:
             "Maand",
             month_labels,
             key="performance_month",
-            help="Maanden zonder posts staan apart vermeld. Sync ophaalt nieuwere content.",
+            help="Wisselen van maand is direct. Klik 'Ververs cijfers' voor live Meta-data.",
         )
     with filter_cols[1]:
         platform_labels = st.multiselect(
@@ -139,6 +139,15 @@ def render_performance_tab() -> None:
             ["Instagram", "Facebook"],
             default=["Instagram", "Facebook"],
             key="performance_platforms",
+        )
+    with filter_cols[2]:
+        st.markdown('<div class="rro-perf-refresh-spacer"></div>', unsafe_allow_html=True)
+        refresh_clicked = st.button(
+            "Ververs cijfers",
+            use_container_width=True,
+            key="performance_refresh_insights",
+            help="Haalt actuele weergaven op bij Meta voor de gekozen maand (duurt even).",
+            disabled=not get_settings().meta_page_access_token,
         )
 
     year, month = label_to_month[selected_label]
@@ -163,24 +172,25 @@ def render_performance_tab() -> None:
             "Klik **Synchroniseer Meta** in de zijbalk om recente posts op te halen."
         )
 
-    insights_cache_key = f"{year:04d}-{month:02d}:{','.join(sorted(platforms))}"
-    settings = get_settings()
-    if (
-        post_count > 0
-        and settings.meta_page_access_token
-        and st.session_state.get("performance_insights_key") != insights_cache_key
-    ):
+    if refresh_clicked and post_count > 0:
         with st.spinner("Weergaven bijwerken…"):
-            refresh_month_insights(year, month, platforms=platforms)
-        st.session_state.performance_insights_key = insights_cache_key
+            stats = refresh_month_insights(
+                year,
+                month,
+                platforms=platforms,
+                insights_only=True,
+            )
+        if stats.token_expired:
+            st.error("Meta-token verlopen — stel tokens opnieuw in en probeer opnieuw.")
+        elif stats.failed and not stats.updated:
+            st.warning("Cijfers bijwerken mislukt. Probeer later opnieuw of sync via de zijbalk.")
 
-    with st.spinner("Ranglijsten laden…"):
-        ranked = get_monthly_top_posts(
-            year,
-            month,
-            platforms=platforms,
-            limit=3,
-        )
+    ranked = get_monthly_top_posts(
+        year,
+        month,
+        platforms=platforms,
+        limit=3,
+    )
 
     st.markdown(
         '<div class="rro-results-section" aria-hidden="true"></div>',

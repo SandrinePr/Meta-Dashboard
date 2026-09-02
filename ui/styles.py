@@ -1411,6 +1411,10 @@ section[data-testid="stSidebar"] .stButton > button[kind="secondary"]:hover {
     border-bottom: 2px solid var(--rro-cta) !important;
 }
 
+.rro-perf-refresh-spacer {
+    height: 1.45rem;
+}
+
 .rro-perf-section-header {
     margin: 1.5rem 0 0.85rem 0;
     padding-bottom: 0.35rem;

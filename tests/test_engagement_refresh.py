@@ -38,3 +38,29 @@ def test_refresh_post_insights_updates_total_views() -> None:
     payload = json.loads(new_raw)
     assert payload["insights_views"] == 1_003_602
     assert payload["like_count"] == 400
+
+
+def test_refresh_post_insights_only_skips_media_fetch() -> None:
+    client = MagicMock()
+    client.get_instagram_media_insights.return_value = {
+        "data": [
+            {"name": "total_views", "total_value": {"value": 500_000}},
+        ]
+    }
+
+    existing = json.dumps({"insights_views": 100, "like_count": 12, "caption": "keep me"})
+    new_raw, error = refresh_post_insights(
+        client,
+        post_id=1,
+        platform="instagram",
+        external_id="123",
+        raw_json=existing,
+        insights_only=True,
+    )
+
+    assert error is None
+    client.get_json.assert_not_called()
+    payload = json.loads(new_raw or "{}")
+    assert payload["insights_views"] == 500_000
+    assert payload["like_count"] == 12
+    assert payload["caption"] == "keep me"
