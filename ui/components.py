@@ -292,7 +292,7 @@ def render_performance_sidebar_button(is_active: bool) -> None:
     """Open the monthly performance view from the sidebar."""
     if st.button(
         "Performance per month",
-        type="secondary" if is_active else "primary",
+        type="tertiary" if is_active else "primary",
         use_container_width=True,
         key="nav_performance",
     ):
@@ -304,7 +304,7 @@ def render_filter_page_sidebar_button(is_active: bool) -> None:
     """Return to the main search/filter page from the sidebar."""
     if st.button(
         "Filter posts",
-        type="secondary" if is_active else "primary",
+        type="tertiary" if is_active else "primary",
         use_container_width=True,
         key="nav_filter_page",
     ):
