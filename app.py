@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 
 from config import get_settings
 from db.database import initialize_database
-from search.engine import search
+from search.engine import get_recent_posts, search
 from sync import get_sync_summary, run_sync
 from ui.components import (
     MIN_QUERY_LENGTH,
@@ -136,6 +136,12 @@ def _render_search_tab() -> None:
     trimmed = query.strip()
 
     if not trimmed:
+        recent = get_recent_posts(platforms=platforms, limit=20)
+        render_results_section(
+            recent,
+            query="",
+            title=f"Laatste posts ({len(recent)})",
+        )
         return
 
     if len(trimmed) < MIN_QUERY_LENGTH:

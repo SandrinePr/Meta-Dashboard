@@ -749,6 +749,7 @@ def render_results_section(
     query: str = "",
     content_count: int | None = None,
     comment_count: int | None = None,
+    title: str | None = None,
 ) -> None:
     """Render results inside the main dashboard card (grows with content)."""
     _ = content_count, comment_count  # kept for backward compatibility; no longer shown
@@ -758,7 +759,7 @@ def render_results_section(
         '<div class="rro-results-section" aria-hidden="true"></div>',
         unsafe_allow_html=True,
     )
-    render_results_header(results)
+    render_results_header(results, title=title)
     if not results:
         st.info("Geen resultaten gevonden in de lokale database.")
     else:
@@ -824,13 +825,16 @@ def _totals_html(results: list[SearchResult]) -> str:
 
 def render_results_header(
     results: list[SearchResult] | None = None,
+    *,
+    title: str | None = None,
 ) -> None:
     """Render results header with count and engagement totals."""
     total = len(results or [])
     totals_html = _totals_html(results or [])
+    heading = title or f"Resultaten ({total})"
     st.markdown(
         '<div class="rro-results-header">'
-        f"<h2>Resultaten ({total})</h2>"
+        f"<h2>{html.escape(heading)}</h2>"
         "</div>"
         f"{totals_html}",
         unsafe_allow_html=True,
