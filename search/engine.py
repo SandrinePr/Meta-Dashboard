@@ -299,6 +299,53 @@ def _row_to_result(row) -> SearchResult:
     )
 
 
+def get_recent_posts(
+    *,
+    platforms: set[str] | None = None,
+    limit: int = 20,
+) -> list[SearchResult]:
+    """Return the newest posts from the local database (no search query)."""
+    platforms = platforms or {"instagram", "facebook"}
+    if not platforms:
+        platforms = {"instagram", "facebook"}
+
+    placeholders = ", ".join("?" for _ in platforms)
+    sql = f"""
+        SELECT
+            'post' AS entity_type,
+            p.id AS entity_id,
+            p.platform AS platform,
+            p.text AS text,
+            COALESCE(
+                (
+                    SELECT GROUP_CONCAT(h.tag, ' ')
+                    FROM post_hashtags ph
+                    JOIN hashtags h ON h.id = ph.hashtag_id
+                    WHERE ph.post_id = p.id
+                ),
+                ''
+            ) AS hashtags,
+            p.published_at AS published_at,
+            p.permalink AS permalink,
+            p.thumbnail_url AS thumbnail_url,
+            a.name AS account_name,
+            a.username AS account_username,
+            NULL AS author_name
+        FROM posts p
+        LEFT JOIN accounts a ON a.id = p.account_id
+        WHERE p.platform IN ({placeholders})
+          AND p.published_at IS NOT NULL
+          AND p.published_at != ''
+        ORDER BY p.published_at DESC
+        LIMIT ?
+    """
+    params: list[object] = [*sorted(platforms), limit]
+    with get_connection() as conn:
+        rows = conn.execute(sql, params).fetchall()
+    return [_row_to_result(row) for row in rows]
+
+
+
 def _append_common_filters(
     sql: str,
     params: list[object],
