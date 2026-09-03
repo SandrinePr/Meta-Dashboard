@@ -19,7 +19,7 @@ from analytics.performance import (
 )
 from config import get_settings
 from search.engine import SearchResult
-from sync.engagement_refresh import refresh_month_insights
+from sync.engagement_refresh import month_insights_are_fresh, refresh_month_insights
 from ui.components import render_result_card
 
 
@@ -132,8 +132,8 @@ def render_performance_tab() -> None:
             month_labels,
             key="performance_month",
             help=(
-                "Ranglijsten laden direct uit de database. "
-                "Klik Ververs cijfers voor de nieuwste totalen tot nu."
+                "Posts uit deze maand, gerangschikt op actuele totalen tot nu. "
+                "Resultaten verschijnen meteen; verouderde cijfers worden daarna bijgewerkt."
             ),
         )
     with filter_cols[1]:
@@ -175,23 +175,22 @@ def render_performance_tab() -> None:
             "Klik **Synchroniseer Meta** in de zijbalk om recente posts op te halen."
         )
 
-    if refresh_clicked and post_count > 0:
-        with st.spinner(
-            f"Actuele cijfers tot nu ophalen voor {format_month_label(year, month)}…"
-        ):
-            stats = refresh_month_insights(
-                year,
-                month,
-                platforms=platforms,
-                insights_only=True,
+    insights_cache_key = f"{year:04d}-{month:02d}:{','.join(sorted(platforms))}"
+    settings = get_settings()
+    data_fresh = month_insights_are_fresh(year, month, platforms=platforms)
+    needs_live_refresh = (
+        post_count > 0
+        and bool(settings.meta_page_access_token)
+        and (
+            refresh_clicked
+            or (
+                not data_fresh
+                and st.session_state.get("performance_insights_key") != insights_cache_key
             )
-        if stats.token_expired:
-            st.error("Meta-token verlopen — stel tokens opnieuw in en probeer opnieuw.")
-        elif stats.failed and not stats.updated:
-            st.warning(
-                "Cijfers bijwerken mislukt. Probeer later opnieuw of sync via de zijbalk."
-            )
+        )
+    )
 
+    # Show rankings immediately from the database (no Meta wait).
     ranked = get_monthly_top_posts(
         year,
         month,
@@ -199,11 +198,16 @@ def render_performance_tab() -> None:
         limit=3,
     )
 
-    st.caption(
-        f"Top posts uit **{format_month_label(year, month)}**, "
-        "gerangschikt op totalen tot nu uit de laatste sync. "
-        "Klik **Ververs cijfers** voor de nieuwste Meta-data."
-    )
+    if needs_live_refresh and not refresh_clicked:
+        st.caption(
+            f"Top posts uit **{format_month_label(year, month)}** — "
+            "actuele totalen tot nu worden nu bijgewerkt…"
+        )
+    else:
+        st.caption(
+            f"Top posts uit **{format_month_label(year, month)}**, "
+            "gerangschikt op **actuele totalen tot nu**."
+        )
 
     st.markdown(
         '<div class="rro-results-section" aria-hidden="true"></div>',
@@ -220,3 +224,24 @@ def render_performance_tab() -> None:
         if index > 0:
             st.markdown('<hr class="rro-perf-section-divider">', unsafe_allow_html=True)
         render_performance_metric_section(metric, ranked[metric])
+
+    # After the page is painted, refresh stale months once, then rerun with live totals.
+    if needs_live_refresh:
+        with st.spinner(
+            f"Actuele cijfers tot nu ophalen voor {format_month_label(year, month)}…"
+        ):
+            stats = refresh_month_insights(
+                year,
+                month,
+                platforms=platforms,
+                insights_only=True,
+            )
+        st.session_state.performance_insights_key = insights_cache_key
+        if stats.token_expired:
+            st.error("Meta-token verlopen — stel tokens opnieuw in en probeer opnieuw.")
+        elif stats.failed and not stats.updated and not stats.skipped:
+            st.warning(
+                "Cijfers bijwerken mislukt. Probeer later opnieuw of sync via de zijbalk."
+            )
+        else:
+            st.rerun()
