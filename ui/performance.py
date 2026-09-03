@@ -132,8 +132,8 @@ def render_performance_tab() -> None:
             month_labels,
             key="performance_month",
             help=(
-                "Posts uit deze maand, gerangschikt op hun huidige totalen tot nu "
-                "(bijv. 47.924), niet op een oud maandcijfer."
+                "Ranglijsten laden meteen. Cijfers zijn totalen tot nu uit de "
+                "laatste sync — klik Ververs cijfers voor live Meta-data."
             ),
         )
     with filter_cols[1]:
@@ -175,17 +175,8 @@ def render_performance_tab() -> None:
             "Klik **Synchroniseer Meta** in de zijbalk om recente posts op te halen."
         )
 
-    insights_cache_key = f"{year:04d}-{month:02d}:{','.join(sorted(platforms))}"
-    refreshed = st.session_state.setdefault("performance_refreshed_months", set())
-    settings = get_settings()
-    # First open of a month (or manual refresh): pull live lifetime totals BEFORE ranking,
-    # so users never see a stale month snapshot like 19.222 instead of 47.924.
-    needs_live_refresh = (
-        post_count > 0
-        and bool(settings.meta_page_access_token)
-        and (refresh_clicked or insights_cache_key not in refreshed)
-    )
-    if needs_live_refresh:
+    # Never block month switching on Meta. Live totals only on explicit refresh.
+    if refresh_clicked and post_count > 0:
         with st.spinner(
             f"Actuele totalen tot nu ophalen voor {format_month_label(year, month)}…"
         ):
@@ -201,9 +192,6 @@ def render_performance_tab() -> None:
             st.warning(
                 "Cijfers bijwerken mislukt. Probeer later opnieuw of sync via de zijbalk."
             )
-        else:
-            refreshed.add(insights_cache_key)
-            st.session_state.performance_refreshed_months = refreshed
 
     ranked = get_monthly_top_posts(
         year,
@@ -214,8 +202,8 @@ def render_performance_tab() -> None:
 
     st.caption(
         f"Top posts **geplaatst in {format_month_label(year, month)}**, "
-        "gerangschikt op hun **huidige totalen tot nu** "
-        "(niet alleen wat die maand behaald was)."
+        "gerangschikt op **totalen tot nu** uit de database. "
+        "Klik **Ververs cijfers** voor de allerlaatste Meta-data."
     )
 
     st.markdown(
