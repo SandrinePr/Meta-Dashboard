@@ -2,7 +2,7 @@
 
 RRO_CSS = """
 <style>
-/* rro-css-v27-nav-active-theme-blue */
+/* rro-css-v28-nav-active-bg-orange-border */
 @import url('https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&display=swap');
 
 :root {
@@ -1379,14 +1379,14 @@ a.rro-btn-link:focus-visible {
 }
 
 section[data-testid="stSidebar"] .stButton > button[kind="secondary"] {
-    background: var(--rro-card) !important;
+    background: var(--rro-sidebar) !important;
     color: #FFFFFF !important;
-    border: 1px solid var(--rro-cyan) !important;
+    border: 1px solid var(--rro-cta) !important;
 }
 
 section[data-testid="stSidebar"] .stButton > button[kind="secondary"]:hover {
-    background: var(--rro-panel) !important;
-    border-color: var(--rro-cyan) !important;
+    background: var(--rro-card) !important;
+    border-color: var(--rro-cta) !important;
     color: #FFFFFF !important;
 }
 
