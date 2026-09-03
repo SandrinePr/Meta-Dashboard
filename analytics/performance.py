@@ -181,7 +181,11 @@ def get_monthly_top_posts(
     platforms: set[str] | None = None,
     limit: int = 3,
 ) -> dict[str, list[TopPost]]:
-    """Return top ``limit`` posts per metric for the selected calendar month."""
+    """Return top ``limit`` posts published in the month, ranked by current totals.
+
+    Posts are filtered by publication month. Metric values are lifetime/current
+    totals from the last Meta sync (views until now), not a month-only snapshot.
+    """
     posts = _fetch_posts_for_month(year, month, platforms=platforms)
     ranked: dict[str, list[TopPost]] = {key: [] for key in METRIC_KEYS}
 
