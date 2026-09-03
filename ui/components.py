@@ -303,7 +303,7 @@ def render_performance_sidebar_button(is_active: bool) -> None:
 def render_filter_page_sidebar_button(is_active: bool) -> None:
     """Return to the main search/filter page from the sidebar."""
     if st.button(
-        "Filter page",
+        "Filter posts",
         type="primary" if is_active else "secondary",
         use_container_width=True,
         key="nav_filter_page",
