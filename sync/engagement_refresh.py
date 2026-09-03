@@ -6,6 +6,7 @@ import json
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 
 from config import get_settings
 from db.database import get_connection
@@ -192,11 +193,17 @@ def refresh_post_rows(
                     break
                 continue
             if new_raw is None or new_raw == (row["raw_json"] or ""):
+                with get_connection() as conn:
+                    conn.execute(
+                        "UPDATE posts SET last_synced_at = CURRENT_TIMESTAMP WHERE id = ?",
+                        (post_id,),
+                    )
+                    conn.commit()
                 stats.skipped += 1
                 continue
             with get_connection() as conn:
                 conn.execute(
-                    "UPDATE posts SET raw_json = ? WHERE id = ?",
+                    "UPDATE posts SET raw_json = ?, last_synced_at = CURRENT_TIMESTAMP WHERE id = ?",
                     (new_raw, post_id),
                 )
                 conn.commit()
@@ -224,11 +231,18 @@ def refresh_post_rows(
                     break
                 continue
             if new_raw is None or new_raw == (row["raw_json"] or ""):
+                # Still bump sync time so "fresh" checks pass after a no-op refresh.
+                with get_connection() as conn:
+                    conn.execute(
+                        "UPDATE posts SET last_synced_at = CURRENT_TIMESTAMP WHERE id = ?",
+                        (post_id,),
+                    )
+                    conn.commit()
                 stats.skipped += 1
                 continue
             with get_connection() as conn:
                 conn.execute(
-                    "UPDATE posts SET raw_json = ? WHERE id = ?",
+                    "UPDATE posts SET raw_json = ?, last_synced_at = CURRENT_TIMESTAMP WHERE id = ?",
                     (new_raw, post_id),
                 )
                 conn.commit()
@@ -241,6 +255,42 @@ def mark_post_unavailable_in_conn(post_id: int, reason: str) -> None:
     with get_connection() as conn:
         mark_post_unavailable(conn, post_id, reason=reason)
         conn.commit()
+
+
+def month_insights_are_fresh(
+    year: int,
+    month: int,
+    *,
+    platforms: set[str] | None = None,
+    max_age_hours: int = 12,
+) -> bool:
+    """Return True when posts for the month were synced within ``max_age_hours``."""
+    ym = f"{year:04d}-{month:02d}"
+    query = """
+        SELECT MIN(last_synced_at) AS oldest
+        FROM posts
+        WHERE strftime('%Y-%m', published_at) = ?
+    """
+    params: list[object] = [ym]
+    if platforms:
+        placeholders = ", ".join("?" for _ in platforms)
+        query += f" AND platform IN ({placeholders})"
+        params.extend(sorted(platforms))
+
+    with get_connection() as conn:
+        row = conn.execute(query, params).fetchone()
+
+    oldest = row["oldest"] if row else None
+    if not oldest:
+        return False
+    try:
+        synced = datetime.fromisoformat(str(oldest).replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if synced.tzinfo is None:
+        synced = synced.replace(tzinfo=timezone.utc)
+    age = datetime.now(timezone.utc) - synced.astimezone(timezone.utc)
+    return age <= timedelta(hours=max_age_hours)
 
 
 def refresh_month_insights(
