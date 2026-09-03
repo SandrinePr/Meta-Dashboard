@@ -2,7 +2,7 @@
 
 RRO_CSS = """
 <style>
-/* rro-css-v28-nav-active-bg-orange-border */
+/* rro-css-v29-nav-active-navy-orange */
 @import url('https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&display=swap');
 
 :root {
@@ -316,6 +316,43 @@ section[data-testid="stSidebar"] .stButton > button:hover {
 }
 
 section[data-testid="stSidebar"] .stButton > button p {
+    color: #FFFFFF !important;
+}
+
+/* Active nav page: same dark navy as sidebar + orange outline */
+section[data-testid="stSidebar"] .stButton > button[kind="secondary"],
+section[data-testid="stSidebar"] .stButton > button[kind="tertiary"],
+section[data-testid="stSidebar"] button[data-testid="stBaseButton-secondary"],
+section[data-testid="stSidebar"] button[data-testid="stBaseButton-tertiary"],
+section[data-testid="stSidebar"] [data-testid="stBaseButton-secondary"],
+section[data-testid="stSidebar"] [data-testid="stBaseButton-tertiary"] {
+    background: #101C2C !important;
+    background-color: #101C2C !important;
+    color: #FFFFFF !important;
+    border: 1px solid #B87844 !important;
+    border-color: #B87844 !important;
+    box-shadow: none !important;
+}
+
+section[data-testid="stSidebar"] .stButton > button[kind="secondary"]:hover,
+section[data-testid="stSidebar"] .stButton > button[kind="tertiary"]:hover,
+section[data-testid="stSidebar"] button[data-testid="stBaseButton-secondary"]:hover,
+section[data-testid="stSidebar"] button[data-testid="stBaseButton-tertiary"]:hover,
+section[data-testid="stSidebar"] [data-testid="stBaseButton-secondary"]:hover,
+section[data-testid="stSidebar"] [data-testid="stBaseButton-tertiary"]:hover {
+    background: #101C2C !important;
+    background-color: #101C2C !important;
+    border: 1px solid #B87844 !important;
+    border-color: #B87844 !important;
+    color: #FFFFFF !important;
+}
+
+section[data-testid="stSidebar"] .stButton > button[kind="secondary"] p,
+section[data-testid="stSidebar"] .stButton > button[kind="tertiary"] p,
+section[data-testid="stSidebar"] button[data-testid="stBaseButton-secondary"] p,
+section[data-testid="stSidebar"] button[data-testid="stBaseButton-tertiary"] p,
+section[data-testid="stSidebar"] [data-testid="stBaseButton-secondary"] p,
+section[data-testid="stSidebar"] [data-testid="stBaseButton-tertiary"] p {
     color: #FFFFFF !important;
 }
 
@@ -1376,22 +1413,6 @@ a.rro-btn-link:focus-visible {
     h1 {
         font-size: 26px !important;
     }
-}
-
-section[data-testid="stSidebar"] .stButton > button[kind="secondary"] {
-    background: var(--rro-sidebar) !important;
-    color: #FFFFFF !important;
-    border: 1px solid var(--rro-cta) !important;
-}
-
-section[data-testid="stSidebar"] .stButton > button[kind="secondary"]:hover {
-    background: var(--rro-card) !important;
-    border-color: var(--rro-cta) !important;
-    color: #FFFFFF !important;
-}
-
-section[data-testid="stSidebar"] .stButton > button[kind="secondary"] p {
-    color: #FFFFFF !important;
 }
 
 /* Tabs: Zoeken / Beste prestaties */
