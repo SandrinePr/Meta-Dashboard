@@ -289,14 +289,26 @@ def _render_deploy_version() -> None:
 
 
 def render_performance_sidebar_button(is_active: bool) -> None:
-    """Toggle the monthly performance view from the sidebar."""
+    """Open the monthly performance view from the sidebar."""
     if st.button(
         "Performance per month",
         type="primary" if is_active else "secondary",
         use_container_width=True,
         key="nav_performance",
     ):
-        st.session_state.dashboard_page = "search" if is_active else "performance"
+        st.session_state.dashboard_page = "performance"
+        st.rerun()
+
+
+def render_filter_page_sidebar_button(is_active: bool) -> None:
+    """Return to the main search/filter page from the sidebar."""
+    if st.button(
+        "Filter page",
+        type="primary" if is_active else "secondary",
+        use_container_width=True,
+        key="nav_filter_page",
+    ):
+        st.session_state.dashboard_page = "search"
         st.rerun()
 
 
