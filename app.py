@@ -14,6 +14,7 @@ from sync import get_sync_summary, run_sync
 from ui.components import (
     MIN_QUERY_LENGTH,
     inject_styles,
+    render_filter_page_sidebar_button,
     render_performance_sidebar_button,
     render_results_section,
     render_search_form,
@@ -118,6 +119,9 @@ def main() -> None:
 
         render_performance_sidebar_button(
             st.session_state.dashboard_page == "performance"
+        )
+        render_filter_page_sidebar_button(
+            st.session_state.dashboard_page == "search"
         )
 
     if st.session_state.dashboard_page == "performance":
