@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 
 from config import get_settings
@@ -28,6 +30,10 @@ FB_ENGAGEMENT_KEYS = ("likes", "reactions", "comments", "shares", "video_views",
 
 IG_FIELDS = as_fields_param(INSTAGRAM_MEDIA_FIELDS)
 FB_FIELDS = as_fields_param(FACEBOOK_POST_FIELDS)
+
+# Parallel Meta insight fetches (each post is independent).
+_REFRESH_WORKERS = 8
+_thread_clients = threading.local()
 
 
 @dataclass(slots=True)
@@ -56,6 +62,14 @@ def _apply_instagram_insight_fields(merged: dict) -> dict:
     if "shares_count" not in enriched and "insights_views" in enriched:
         enriched["shares_count"] = int(enriched.get("shares_count") or 0)
     return enriched
+
+
+def _thread_client() -> MetaClient:
+    client = getattr(_thread_clients, "client", None)
+    if client is None:
+        client = MetaClient.from_settings()
+        _thread_clients.client = client
+    return client
 
 
 def refresh_post_insights(
@@ -127,53 +141,98 @@ def refresh_post_insights(
     return new_raw, None
 
 
+def _fetch_row_result(
+    row: dict,
+    *,
+    insights_only: bool,
+) -> tuple[dict, str | None, MetaClientError | None]:
+    """Fetch insights for one row using a thread-local Meta client."""
+    new_raw, error = refresh_post_insights(
+        _thread_client(),
+        post_id=int(row["id"]),
+        platform=row["platform"],
+        external_id=row["external_id"],
+        raw_json=row["raw_json"],
+        insights_only=insights_only,
+    )
+    return row, new_raw, error
+
+
 def refresh_post_rows(
     rows: list[dict],
     *,
     client: MetaClient | None = None,
     insights_only: bool = False,
+    max_workers: int = _REFRESH_WORKERS,
 ) -> RefreshInsightsStats:
     """Refresh insights for database post rows (id, platform, external_id, raw_json)."""
     stats = RefreshInsightsStats()
     if not rows:
         return stats
 
-    meta_client = client or MetaClient.from_settings()
-
-    for row in rows:
-        post_id = int(row["id"])
-        platform = row["platform"]
-        external_id = row["external_id"]
-        raw_json = row["raw_json"]
-
-        new_raw, error = refresh_post_insights(
-            meta_client,
-            post_id=post_id,
-            platform=platform,
-            external_id=external_id,
-            raw_json=raw_json,
-            insights_only=insights_only,
-        )
-        if error is not None:
-            if is_unavailable_meta_error(error):
-                mark_post_unavailable_in_conn(post_id, format_meta_client_error(error))
-            stats.failed += 1
-            if getattr(error, "error_code", None) == 190:
-                stats.token_expired = True
-                break
-            continue
-
-        if new_raw is None or new_raw == (raw_json or ""):
-            stats.skipped += 1
-            continue
-
-        with get_connection() as conn:
-            conn.execute(
-                "UPDATE posts SET raw_json = ? WHERE id = ?",
-                (new_raw, post_id),
+    # Single-threaded path when a client is injected (tests) or tiny batches.
+    if client is not None or len(rows) == 1 or max_workers <= 1:
+        meta_client = client or MetaClient.from_settings()
+        for row in rows:
+            post_id = int(row["id"])
+            new_raw, error = refresh_post_insights(
+                meta_client,
+                post_id=post_id,
+                platform=row["platform"],
+                external_id=row["external_id"],
+                raw_json=row["raw_json"],
+                insights_only=insights_only,
             )
-            conn.commit()
-        stats.updated += 1
+            if error is not None:
+                if is_unavailable_meta_error(error):
+                    mark_post_unavailable_in_conn(post_id, format_meta_client_error(error))
+                stats.failed += 1
+                if getattr(error, "error_code", None) == 190:
+                    stats.token_expired = True
+                    break
+                continue
+            if new_raw is None or new_raw == (row["raw_json"] or ""):
+                stats.skipped += 1
+                continue
+            with get_connection() as conn:
+                conn.execute(
+                    "UPDATE posts SET raw_json = ? WHERE id = ?",
+                    (new_raw, post_id),
+                )
+                conn.commit()
+            stats.updated += 1
+        return stats
+
+    workers = min(max_workers, len(rows))
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = [
+            executor.submit(_fetch_row_result, row, insights_only=insights_only)
+            for row in rows
+        ]
+        for future in as_completed(futures):
+            row, new_raw, error = future.result()
+            post_id = int(row["id"])
+            if error is not None:
+                if is_unavailable_meta_error(error):
+                    mark_post_unavailable_in_conn(post_id, format_meta_client_error(error))
+                stats.failed += 1
+                if getattr(error, "error_code", None) == 190:
+                    stats.token_expired = True
+                    # Cancel remaining work once the token is dead.
+                    for pending in futures:
+                        pending.cancel()
+                    break
+                continue
+            if new_raw is None or new_raw == (row["raw_json"] or ""):
+                stats.skipped += 1
+                continue
+            with get_connection() as conn:
+                conn.execute(
+                    "UPDATE posts SET raw_json = ? WHERE id = ?",
+                    (new_raw, post_id),
+                )
+                conn.commit()
+            stats.updated += 1
 
     return stats
 

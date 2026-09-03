@@ -81,7 +81,7 @@ def render_performance_metric_section(metric: str, posts: list[TopPost]) -> None
     label = METRIC_LABELS[metric]
     st.markdown(
         f'<h3 class="rro-perf-section-header">'
-        f"{html.escape(label)} · top 3"
+        f"{html.escape(label)} · top 3 · tot nu"
         f"</h3>",
         unsafe_allow_html=True,
     )
@@ -131,7 +131,10 @@ def render_performance_tab() -> None:
             "Maand",
             month_labels,
             key="performance_month",
-            help="Wisselen van maand is direct. Klik 'Ververs cijfers' voor live Meta-data.",
+            help=(
+                "Posts uit deze maand, gerangschikt op actuele totalen tot nu "
+                "(niet alleen het cijfer van die maand)."
+            ),
         )
     with filter_cols[1]:
         platform_labels = st.multiselect(
@@ -146,7 +149,7 @@ def render_performance_tab() -> None:
             "Ververs cijfers",
             use_container_width=True,
             key="performance_refresh_insights",
-            help="Haalt actuele weergaven op bij Meta voor de gekozen maand (duurt even).",
+            help="Haalt opnieuw actuele totalen tot nu op bij Meta.",
             disabled=not get_settings().meta_page_access_token,
         )
 
@@ -172,24 +175,44 @@ def render_performance_tab() -> None:
             "Klik **Synchroniseer Meta** in de zijbalk om recente posts op te halen."
         )
 
-    if refresh_clicked and post_count > 0:
-        with st.spinner("Weergaven bijwerken…"):
+    insights_cache_key = f"{year:04d}-{month:02d}:{','.join(sorted(platforms))}"
+    settings = get_settings()
+    should_refresh = (
+        post_count > 0
+        and settings.meta_page_access_token
+        and (
+            refresh_clicked
+            or st.session_state.get("performance_insights_key") != insights_cache_key
+        )
+    )
+    if should_refresh:
+        with st.spinner(
+            f"Actuele cijfers tot nu ophalen voor {format_month_label(year, month)}…"
+        ):
             stats = refresh_month_insights(
                 year,
                 month,
                 platforms=platforms,
                 insights_only=True,
             )
+        st.session_state.performance_insights_key = insights_cache_key
         if stats.token_expired:
             st.error("Meta-token verlopen — stel tokens opnieuw in en probeer opnieuw.")
         elif stats.failed and not stats.updated:
-            st.warning("Cijfers bijwerken mislukt. Probeer later opnieuw of sync via de zijbalk.")
+            st.warning(
+                "Cijfers bijwerken mislukt. Probeer later opnieuw of sync via de zijbalk."
+            )
 
     ranked = get_monthly_top_posts(
         year,
         month,
         platforms=platforms,
         limit=3,
+    )
+
+    st.caption(
+        f"Top posts uit **{format_month_label(year, month)}**, "
+        "gerangschikt op **actuele totalen tot nu** (niet alleen die maand)."
     )
 
     st.markdown(
