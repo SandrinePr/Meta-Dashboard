@@ -2,7 +2,7 @@
 
 RRO_CSS = """
 <style>
-/* rro-css-v25-result-btn-hover */
+/* rro-css-v26-nav-active-blue */
 @import url('https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&display=swap');
 
 :root {
@@ -16,6 +16,8 @@ RRO_CSS = """
     --rro-input-hover: #556070;
     --rro-cta: #B87844;
     --rro-cta-hover: #A45E2B;
+    --rro-nav-active: #3B6EA5;
+    --rro-nav-active-hover: #2F5A8A;
     --rro-text: #F2F0EC;
     --rro-text-muted: rgba(242, 240, 236, 0.62);
     --rro-border: rgba(242, 240, 236, 0.12);
@@ -1379,15 +1381,19 @@ a.rro-btn-link:focus-visible {
 }
 
 section[data-testid="stSidebar"] .stButton > button[kind="secondary"] {
-    background: transparent !important;
-    color: var(--rro-text-muted) !important;
-    border: 1px solid var(--rro-border) !important;
+    background: var(--rro-nav-active) !important;
+    color: #FFFFFF !important;
+    border: 1px solid var(--rro-nav-active) !important;
 }
 
 section[data-testid="stSidebar"] .stButton > button[kind="secondary"]:hover {
-    background: var(--rro-input) !important;
-    color: var(--rro-text) !important;
-    border-color: var(--rro-border) !important;
+    background: var(--rro-nav-active-hover) !important;
+    border-color: var(--rro-nav-active-hover) !important;
+    color: #FFFFFF !important;
+}
+
+section[data-testid="stSidebar"] .stButton > button[kind="secondary"] p {
+    color: #FFFFFF !important;
 }
 
 /* Tabs: Zoeken / Beste prestaties */
