@@ -13,6 +13,8 @@ from db.repository import (
 )
 from search.engine import (
     FUZZY_RATIO_THRESHOLD,
+    _build_fts_query,
+    _like_seed,
     compact_normalize,
     result_matches_query,
     search,
@@ -135,21 +137,135 @@ def test_compact_normalize_strips_separators_and_case() -> None:
     assert compact_normalize("pulsgroen") == "pulsgroen"
 
 
-def test_result_matches_query_compact_and_fuzzy() -> None:
-    result = SearchResult(
+def test_multiword_fts_requires_all_parts_and_compact_form() -> None:
+    fts = _build_fts_query("Mint Interieur")
+    assert " AND " in fts
+    assert "mintinterieur" in fts.lower()
+    assert _like_seed("Mint Interieur") == "mintinterieur"
+    assert _like_seed("Mint Interieurs") == "mintinterieur"
+    assert "interieur" in _build_fts_query("Mint Interieurs").lower()
+    assert "groen*" in _build_fts_query("puls groen").lower()
+
+
+def _result(
+    text: str,
+    hashtags: list[str] | None = None,
+    account_name: str | None = None,
+    account_username: str | None = None,
+) -> SearchResult:
+    return SearchResult(
         platform="facebook",
         entity_type="post",
         entity_id=1,
         published_at="2026-07-01T00:00:00+00:00",
-        text="De tuinmeubelen van Borek",
-        hashtags=[],
+        text=text,
+        hashtags=hashtags or [],
         permalink=None,
         thumbnail_url=None,
+        account_name=account_name,
+        account_username=account_username,
     )
+
+
+def test_result_matches_query_compact_and_fuzzy() -> None:
+    result = _result("De tuinmeubelen van Borek")
     assert result_matches_query(result, "bore")
     assert result_matches_query(result, "BOREK")
     assert result_matches_query(result, "bork")  # fuzzy typo vs borek
     assert FUZZY_RATIO_THRESHOLD == 0.8
+
+
+def test_multiword_query_matches_compound_variants_not_loose_words() -> None:
+    """'Mint Interieur' is one name: keep spacing/plural/@/# variants, not loose words."""
+    query = "Mint Interieur"
+    assert result_matches_query(_result("Welkom bij Mint Interieur"), query)
+    assert result_matches_query(_result("Welkom bij MintInterieur"), query)
+    assert result_matches_query(_result("Welkom bij Mint Interieurs"), query)
+    assert result_matches_query(_result("Welkom bij MintInterieurs"), query)
+    assert result_matches_query(_result("Bekijk @mintinterieur even"), query)
+    assert result_matches_query(_result("Nieuw project", ["mintinterieur"]), query)
+    assert result_matches_query(_result("Zie #mintinterieur"), query)
+    assert result_matches_query(_result("Mint Interieuren in Beek"), query)
+
+    assert not result_matches_query(_result("Prachtig interieur in deze woning"), query)
+    assert not result_matches_query(_result("Welkom bij Droominterieur"), query)
+    assert not result_matches_query(
+        _result("Mint groene muur bij Droominterieur"), query
+    )
+    assert not result_matches_query(
+        _result("Mint plantjes en een mooi interieur"), query
+    )
+
+    for compact_query in (
+        "MintInterieur",
+        "MintInterieurs",
+        "@mintinterieur",
+        "#mintinterieur",
+        "Mint Interieurs",
+    ):
+        assert result_matches_query(_result("Welkom bij Mint Interieur"), compact_query)
+        assert result_matches_query(_result("Mint Interieuren in Beek"), compact_query)
+        assert not result_matches_query(
+            _result("Prachtig interieur in deze woning"), compact_query
+        )
+        assert not result_matches_query(_result("Welkom bij Droominterieur"), compact_query)
+        assert not result_matches_query(
+            _result("Mint plantjes en een mooi interieur"), compact_query
+        )
+
+
+def test_mint_interieur_search_excludes_droominterieur(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _setup(tmp_path, monkeypatch)
+    with get_connection() as conn:
+        account_id = upsert_account(conn, platform="instagram", external_id="ig-1")
+        hits = [
+            ("ig-phrase", "Welkom bij Mint Interieur", []),
+            ("ig-concat", "Studio MintInterieurs", []),
+            ("ig-tag", "Nieuw project", ["mintinterieur"]),
+            ("ig-mention", "Bekijk @mintinterieur", []),
+        ]
+        misses = [
+            ("ig-interieur-only", "Prachtig interieur in deze woning", []),
+            ("ig-droom", "Welkom bij Droominterieur", []),
+            ("ig-droom-mint", "Mint groene muur bij Droominterieur", []),
+        ]
+        for external_id, text, tags in hits + misses:
+            post = upsert_post(
+                conn,
+                platform="instagram",
+                external_id=external_id,
+                account_id=account_id,
+                content_type="post",
+                text=text,
+                permalink=f"https://instagram.com/p/{external_id}",
+                media_url=None,
+                thumbnail_url=None,
+                media_type="IMAGE",
+                published_at="2026-07-01T10:00:00+00:00",
+                raw_json="{}",
+            )
+            sync_post_hashtags(conn, post.row_id, tags)
+        rebuild_search_index(conn)
+        conn.commit()
+
+    for query in (
+        "Mint Interieur",
+        "MintInterieur",
+        "Mint Interieurs",
+        "MintInterieurs",
+        "@mintinterieur",
+        "#mintinterieur",
+    ):
+        texts = {item.text for item in search(query)}
+        assert "Welkom bij Mint Interieur" in texts, query
+        assert "Studio MintInterieurs" in texts, query
+        assert "Nieuw project" in texts, query
+        assert "Bekijk @mintinterieur" in texts, query
+        assert "Prachtig interieur in deze woning" not in texts, query
+        assert "Welkom bij Droominterieur" not in texts, query
+        assert "Mint groene muur bij Droominterieur" not in texts, query
 
 
 def test_puls_groen_variants_find_ig_and_fb(tmp_path: Path, monkeypatch) -> None:

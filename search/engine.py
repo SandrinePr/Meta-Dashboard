@@ -70,33 +70,84 @@ def _query_tokens(query: str) -> list[str]:
 
 
 def _build_fts_query(query: str) -> str:
-    """Build a loose FTS5 OR-of-prefixes query (wide net; Python filters after)."""
+    """Build an FTS5 prefix query. Multi-word terms use AND so each part must hit."""
     tokens = _query_tokens(query)
     compact = compact_normalize(query)
-    parts: list[str] = []
     seen: set[str] = set()
 
-    def _add(term: str) -> None:
+    def _star(term: str) -> str | None:
         cleaned = term.strip()
         if len(cleaned) < 2 or cleaned in seen:
-            return
+            return None
         seen.add(cleaned)
-        # Prefix match so ``bore`` retrieves ``borek``.
-        parts.append(f"{cleaned}*")
+        return f"{cleaned}*"
 
+    if len(tokens) > 1:
+        head_parts = [part for token in tokens[:-1] if (part := _star(token))]
+        last_stars = [
+            star for form in _last_token_search_forms(tokens) if (star := _star(form))
+        ]
+        if last_stars:
+            last_clause = (
+                last_stars[0] if len(last_stars) == 1 else f"({' OR '.join(last_stars)})"
+            )
+            and_clause = " AND ".join([*head_parts, last_clause])
+        else:
+            and_clause = " AND ".join(head_parts)
+        compact_stars = [
+            star
+            for variant in sorted(_compact_query_variants([t.lower() for t in tokens]))
+            if (star := _star(variant))
+        ]
+        if compact_stars:
+            return f"({and_clause}) OR {' OR '.join(compact_stars)}"
+        return and_clause
+
+    parts: list[str] = []
     for token in tokens:
-        _add(token)
-    if compact:
-        _add(compact)
-
+        part = _star(token)
+        if part:
+            parts.append(part)
+    compact_part = _star(compact) if compact else None
+    if compact_part:
+        parts.append(compact_part)
     return " OR ".join(parts)
 
 
+def _plural_stem(token: str) -> str:
+    """Strip a trailing Dutch plural ``s`` / ``en`` from the last query word."""
+    last = compact_normalize(token) or token.lower()
+    if last.endswith("s") and len(last) > 4:
+        return last[:-1]
+    if last.endswith("en") and len(last) > 6:
+        return last[:-2]
+    return last
+
+
+def _last_token_search_forms(tokens: list[str]) -> list[str]:
+    """Last-word prefixes including small plural stems (``interieur`` / ``interieurs``)."""
+    if not tokens:
+        return []
+    last = compact_normalize(tokens[-1]) or tokens[-1].lower()
+    stem = _plural_stem(tokens[-1])
+    forms = {stem, stem + "s", stem + "en", last}
+    return sorted(form for form in forms if len(form) >= 2)
+
+
 def _like_seed(query: str) -> str:
-    """Short seed for LIKE fallback so ``pulsgroen`` can find ``PULS Groen``."""
+    """LIKE fallback seed. Multi-word queries use the compact name stem.
+
+    ``Mint Interieur`` must not use seed ``mint``: that also matches
+    ``Droominterieur``. Single-term ``pulsgroen`` still uses a short seed so
+    spaced ``PULS Groen`` can be found.
+    """
     compact = compact_normalize(query)
     if not compact:
         return ""
+    tokens = _query_tokens(query)
+    if len(tokens) > 1:
+        variants = _compact_query_variants([token.lower() for token in tokens])
+        return min(variants, key=len) if variants else compact
     return compact[:4] if len(compact) >= 4 else compact
 
 
@@ -108,14 +159,84 @@ def _fuzzy_token_match(query: str, candidate: str) -> bool:
         return query == candidate
     if query in candidate or candidate.startswith(query):
         return True
+    # ``mintinterieur`` must not fuzzy-match ``interieur``: they share a long
+    # suffix, but the leftover prefix is another glued word, not a typo.
+    if query.endswith(candidate) and len(query) - len(candidate) >= 3:
+        return False
+    if candidate.endswith(query) and len(candidate) - len(query) >= 3:
+        return False
     # Avoid fuzzy on very short pairs / large length gaps (noise).
     if len(query) < 3 or abs(len(query) - len(candidate)) > max(2, len(query) // 2):
         return False
     return SequenceMatcher(None, query, candidate).ratio() >= FUZZY_RATIO_THRESHOLD
 
 
+def _compact_query_variants(tokens: list[str]) -> set[str]:
+    """Compact forms of a query including small last-token plurals (``s`` / ``en``).
+
+    Last-token only, so ``puls groen`` does not lose the ``en`` of ``groen``.
+    """
+    if not tokens:
+        return set()
+    stem = _plural_stem(tokens[-1])
+    last_forms = {stem, stem + "s", stem + "en"}
+    prefix = "".join(compact_normalize(token) for token in tokens[:-1])
+    return {prefix + form for form in last_forms if len(prefix + form) >= 2}
+
+
+def _compound_name_hit(
+    variants: set[str], candidate: str, *, allow_infix: bool
+) -> bool:
+    """True when ``candidate`` is the compact name, a small plural, or a compound."""
+    if not candidate or not variants:
+        return False
+    for variant in variants:
+        if candidate.startswith(variant):
+            return True
+        if allow_infix and variant in candidate:
+            return True
+    return False
+
+
+def _compound_phrase_match(tokens: list[str], compact_tokens: list[str]) -> bool:
+    """Match a multi-word query as one name: spaces, concatenation, small plurals.
+
+    ``Mint Interieur`` hits ``MintInterieurs``, ``#mintinterieur`` and
+    ``PULS Groenprojecten``-style compounds, but not ``Droominterieur`` or a
+    caption that only contains ``interieur``.
+    """
+    variants = _compact_query_variants(tokens)
+    compact_query = "".join(compact_normalize(token) for token in tokens)
+    if not variants or not compact_tokens:
+        return False
+
+    for index, start_token in enumerate(compact_tokens):
+        if _compound_name_hit(variants, start_token, allow_infix=True):
+            return True
+        combined = start_token
+        for token in compact_tokens[index + 1 :]:
+            combined += token
+            if _compound_name_hit(variants, combined, allow_infix=False):
+                return True
+            if len(combined) >= len(compact_query) and not compact_query.startswith(
+                combined
+            ):
+                break
+            if not compact_query.startswith(combined) and not any(
+                variant.startswith(combined) for variant in variants
+            ):
+                break
+    return False
+
+
 def _field_matches(query: str, field: str | None) -> bool:
-    """Match query against one field using original + compact + fuzzy token checks."""
+    """Match query against one field using original + compact + fuzzy token checks.
+
+    Multi-word queries require every part of the name (``Mint`` and
+    ``Interieur``). Spaces and small plurals (``s`` / ``en``) are ignored, but
+    another name such as ``Droominterieur`` or a caption with only
+    ``interieur`` does not match.
+    """
     if not field:
         return False
 
@@ -123,18 +244,26 @@ def _field_matches(query: str, field: str | None) -> bool:
     compact_query = compact_normalize(query)
     field_lower = field.lower()
     compact_field = compact_normalize(field)
+    tokens = [token.lower() for token in _query_tokens(query)]
+    field_tokens = _TERM_PATTERN.findall(field_lower)
+    compact_field_tokens = [compact_normalize(token) for token in field_tokens if token]
 
     if original_query and original_query in field_lower:
         return True
-    if compact_query and compact_query in compact_field:
+
+    if _compound_phrase_match(tokens, compact_field_tokens):
         return True
 
-    tokens = [token.lower() for token in _query_tokens(query)]
-    if not tokens:
+    # Multi-word queries are one name. Do not match each word independently:
+    # ``mint`` is a substring of ``droominterieur``, so AND-of-tokens would
+    # still return Droominterieur for ``Mint Interieur``.
+    if len(tokens) > 1:
         return False
 
-    field_tokens = _TERM_PATTERN.findall(field_lower)
-    compact_field_tokens = [compact_normalize(token) for token in field_tokens if token]
+    if compact_query and compact_query in compact_field:
+        return True
+    if not tokens:
+        return False
 
     def _token_hits(needle: str) -> bool:
         needle_l = needle.lower().strip()
@@ -150,13 +279,7 @@ def _field_matches(query: str, field: str | None) -> bool:
         return False
 
     # Single-term queries: allow partial/fuzzy token hits (``bore`` → ``borek``).
-    if len(tokens) == 1:
-        return _token_hits(tokens[0]) or _token_hits(compact_query)
-
-    # Multi-term queries: prefer compact form (handled above). Otherwise require
-    # every token to hit so ``puls groen`` does not match posts that only say
-    # ``groen`` / ``groene``.
-    return all(_token_hits(token) for token in tokens)
+    return _token_hits(tokens[0]) or _token_hits(compact_query)
 
 
 def _searchable_fields(result: SearchResult) -> list[str]:
@@ -176,7 +299,8 @@ def result_matches_query(result: SearchResult, query: str) -> bool:
     """Return True when the result matches via original or normalized/fuzzy logic.
 
     Matching is evaluated against the combined searchable haystack so multi-word
-    compact forms (``puls groen`` → ``pulsgroen``) work across field boundaries.
+    names (``puls groen`` → ``pulsgroen``, ``Mint Interieur`` → ``#mintinterieur``)
+    stay one phrase instead of matching each word on its own.
     """
     if not normalize_search_term(query).strip() and not compact_normalize(query):
         return False
