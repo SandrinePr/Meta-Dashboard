@@ -146,6 +146,52 @@ def test_months_between_inclusive() -> None:
     assert _months_between((2026, 3), (2026, 1)) == [(2026, 3), (2026, 2), (2026, 1)]
 
 
+def test_get_monthly_top_posts_excludes_competitors(tmp_path: Path, monkeypatch) -> None:
+    _setup_db(tmp_path, monkeypatch)
+    with get_connection() as conn:
+        own_id = upsert_account(
+            conn, platform="instagram", external_id="own-ig", username="own.brand"
+        )
+        competitor_id = upsert_account(
+            conn,
+            platform="instagram",
+            external_id="comp-ig",
+            username="competitor.brand",
+        )
+        conn.execute(
+            "UPDATE accounts SET comparison_role = 'own' WHERE id = ?",
+            (own_id,),
+        )
+        conn.execute(
+            "UPDATE accounts SET comparison_role = 'competitor' WHERE id = ?",
+            (competitor_id,),
+        )
+        for account_id, external_id, likes in (
+            (own_id, "own-1", 10),
+            (competitor_id, "comp-1", 999),
+            (own_id, "own-2", 20),
+        ):
+            upsert_post(
+                conn,
+                platform="instagram",
+                external_id=external_id,
+                account_id=account_id,
+                content_type="post",
+                text=external_id,
+                permalink=f"https://example.com/{external_id}",
+                media_url=None,
+                thumbnail_url=None,
+                media_type="IMAGE",
+                published_at="2026-06-10T12:00:00+00:00",
+                raw_json=json.dumps({"like_count": likes}),
+            )
+        conn.commit()
+
+    ranked = get_monthly_top_posts(2026, 6, platforms={"instagram"}, limit=3)
+    assert [post.metric_value for post in ranked["likes"]] == [20, 10]
+    assert all(post.metric_value != 999 for post in ranked["likes"])
+
+
 def test_build_month_select_options_includes_all_months() -> None:
     from ui.performance import build_month_select_options
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import logging
+import time
 from typing import Any
 
 import requests
@@ -29,6 +30,11 @@ from meta.endpoints import (
     MEDIA_EDGE,
     as_fields_param,
 )
+from meta.rate_limit import (
+    build_rate_limit_info,
+    is_rate_limit_error,
+    sanitize_request_params,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -53,23 +59,38 @@ class MetaRequestError(MetaClientError):
         error_code: int | None = None,
         error_subcode: int | None = None,
         is_transient: bool = False,
+        retry_after_seconds: int | None = None,
+        blocked_until: str | None = None,
+        usage_headers: dict | None = None,
+        fbtrace_id: str | None = None,
+        is_rate_limited: bool = False,
+        duration_ms: float | None = None,
     ) -> None:
         super().__init__(message)
         self.status_code = status_code
         self.error_code = error_code
         self.error_subcode = error_subcode
         self.is_transient = is_transient
+        self.retry_after_seconds = retry_after_seconds
+        self.blocked_until = blocked_until
+        self.usage_headers = usage_headers or {}
+        self.fbtrace_id = fbtrace_id
+        self.is_rate_limited = is_rate_limited
+        self.duration_ms = duration_ms
 
 
 TOKEN_EXPIRED_MESSAGE = (
     "Meta token verlopen. Genereer nieuwe User Token en run scripts/refresh_all_tokens.py."
 )
+RATE_LIMIT_USER_MESSAGE = "Meta-aanvraaglimiet bereikt"
 
 
 def format_meta_client_error(exc: MetaClientError) -> str:
     """Return a user-facing sync error message for Meta client failures."""
     if isinstance(exc, MetaRequestError) and exc.error_code == 190:
         return TOKEN_EXPIRED_MESSAGE
+    if isinstance(exc, MetaRequestError) and exc.is_rate_limited:
+        return RATE_LIMIT_USER_MESSAGE
     return str(exc)
 
 
@@ -77,11 +98,27 @@ def _is_retryable_error(exc: BaseException) -> bool:
     if isinstance(exc, (requests.Timeout, requests.ConnectionError)):
         return True
     if isinstance(exc, MetaRequestError):
+        # Never retry application/rate limits — retries burn the remaining quota.
+        if exc.is_rate_limited or is_rate_limit_error(
+            error_code=exc.error_code,
+            message=str(exc),
+            status_code=exc.status_code,
+        ):
+            return False
         if exc.is_transient:
             return True
-        if exc.status_code in {429, 500, 502, 503, 504}:
+        if exc.status_code in {500, 502, 503, 504}:
             return True
     return False
+
+
+@dataclass(frozen=True, slots=True)
+class MetaRequestMeta:
+    """Safe timing/usage metadata for one Graph API HTTP response."""
+
+    duration_ms: float
+    usage_headers: dict[str, Any]
+    status_code: int | None = None
 
 
 @dataclass(slots=True)
@@ -134,14 +171,19 @@ class MetaClient:
         url: str,
         *,
         params: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        """Execute one GET request and return JSON with robust error mapping."""
-        logger.debug("Meta request start url=%s params=%s", url, params)
+    ) -> tuple[dict[str, Any], MetaRequestMeta]:
+        """Execute one GET request and return JSON plus safe request metadata."""
+        safe_params = sanitize_request_params(params)
+        # Never log the full URL: paging.next includes access_token.
+        logger.debug("Meta request start endpoint_params=%s", safe_params)
+        started = time.perf_counter()
         try:
             response = self.http.get(url, params=params, timeout=self.timeout_seconds)
         except (requests.Timeout, requests.ConnectionError) as exc:
-            logger.warning("Meta network error url=%s error=%s", url, exc)
+            logger.warning("Meta network error params=%s error=%s", safe_params, exc)
             raise
+
+        duration_ms = (time.perf_counter() - started) * 1000.0
 
         if response.ok:
             try:
@@ -151,8 +193,19 @@ class MetaClient:
                     "Meta API returned non-JSON response.",
                     status_code=response.status_code,
                 ) from exc
-            logger.debug("Meta request success url=%s", url)
-            return payload
+            usage = build_rate_limit_info(
+                error_code=None,
+                message="ok",
+                headers=response.headers,
+            ).usage_headers
+            if usage:
+                logger.debug("Meta usage headers=%s", usage)
+            logger.debug("Meta request success duration_ms=%.1f", duration_ms)
+            return payload, MetaRequestMeta(
+                duration_ms=duration_ms,
+                usage_headers=usage,
+                status_code=response.status_code,
+            )
 
         error_payload: dict[str, Any] = {}
         try:
@@ -163,19 +216,44 @@ class MetaClient:
             pass
 
         message = error_payload.get("message") or response.text or "Unknown Meta API error"
-        meta_error = MetaRequestError(
-            message,
+        error_code = error_payload.get("code")
+        rate_info = build_rate_limit_info(
+            error_code=error_code if isinstance(error_code, int) else None,
+            message=str(message),
+            headers=response.headers,
+            error_payload=error_payload,
+            fbtrace_id=str(error_payload["fbtrace_id"])
+            if error_payload.get("fbtrace_id")
+            else None,
+        )
+        rate_limited = is_rate_limit_error(
+            error_code=rate_info.error_code,
+            message=str(message),
             status_code=response.status_code,
-            error_code=error_payload.get("code"),
+        )
+        meta_error = MetaRequestError(
+            RATE_LIMIT_USER_MESSAGE if rate_limited else message,
+            status_code=response.status_code,
+            error_code=error_code if isinstance(error_code, int) else None,
             error_subcode=error_payload.get("error_subcode"),
             is_transient=bool(error_payload.get("is_transient", False)),
+            retry_after_seconds=rate_info.retry_after_seconds,
+            blocked_until=rate_info.blocked_until,
+            usage_headers=rate_info.usage_headers,
+            fbtrace_id=rate_info.fbtrace_id,
+            is_rate_limited=rate_limited,
+            duration_ms=duration_ms,
         )
         logger.warning(
-            "Meta request failed status=%s code=%s transient=%s message=%s",
+            "Meta request failed status=%s code=%s rate_limited=%s "
+            "retry_after=%s usage=%s duration_ms=%.1f message=%s",
             meta_error.status_code,
             meta_error.error_code,
-            meta_error.is_transient,
-            message,
+            meta_error.is_rate_limited,
+            meta_error.retry_after_seconds,
+            meta_error.usage_headers,
+            duration_ms,
+            str(meta_error),
         )
         raise meta_error
 
@@ -188,6 +266,23 @@ class MetaClient:
         use_page_token: bool = True,
     ) -> dict[str, Any]:
         """Perform a GET against `base_url/<endpoint>` and return JSON."""
+        payload, _meta = self.get_json_with_meta(
+            endpoint,
+            params=params,
+            access_token=access_token,
+            use_page_token=use_page_token,
+        )
+        return payload
+
+    def get_json_with_meta(
+        self,
+        endpoint: str,
+        *,
+        params: dict[str, Any] | None = None,
+        access_token: str | None = None,
+        use_page_token: bool = True,
+    ) -> tuple[dict[str, Any], MetaRequestMeta]:
+        """GET JSON and return safe per-request timing/usage metadata."""
         token_source = access_token
         if token_source is None:
             token_source = self.page_access_token if use_page_token else self.user_access_token
@@ -222,7 +317,7 @@ class MetaClient:
         records: list[dict[str, Any]] = []
 
         while next_url:
-            payload = self._request_json(next_url, params=current_params)
+            payload, _meta = self._request_json(next_url, params=current_params)
             data = payload.get("data", [])
             if not isinstance(data, list):
                 raise MetaRequestError("Expected list payload in Graph API data field.")

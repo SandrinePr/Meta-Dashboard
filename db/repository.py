@@ -15,6 +15,16 @@ _INSIGHT_PRESERVE_KEYS = (
     "insights_saved",
     "insights_reach",
 )
+# Lean syncs (e.g. Business Discovery) must not wipe previously stored media/captions.
+_MEDIA_PRESERVE_KEYS = (
+    "media_url",
+    "thumbnail_url",
+    "full_picture",
+    "attachments",
+    "children",
+    "caption",
+    "message",
+)
 _UNAVAILABLE_PRESERVE_KEYS = (
     "rro_unavailable",
     "rro_unavailable_reason",
@@ -27,7 +37,7 @@ def merge_post_raw_json(
     *,
     clear_unavailable: bool = False,
 ) -> str | None:
-    """Merge new post JSON onto existing, preserving Insights when missing on new."""
+    """Merge new post JSON onto existing, preserving Insights/media when missing on new."""
     if not new_raw:
         return existing_raw
     if not existing_raw:
@@ -42,6 +52,9 @@ def merge_post_raw_json(
     merged = dict(new)
     for key in _INSIGHT_PRESERVE_KEYS:
         if merged.get(key) is None and existing.get(key) is not None:
+            merged[key] = existing[key]
+    for key in _MEDIA_PRESERVE_KEYS:
+        if merged.get(key) in (None, "", {}) and existing.get(key) not in (None, "", {}):
             merged[key] = existing[key]
     if clear_unavailable:
         merged.pop("rro_unavailable", None)
@@ -160,8 +173,8 @@ def upsert_post(
                 content_type = ?,
                 text = ?,
                 permalink = ?,
-                media_url = ?,
-                thumbnail_url = ?,
+                media_url = COALESCE(?, media_url),
+                thumbnail_url = COALESCE(?, thumbnail_url),
                 media_type = ?,
                 published_at = ?,
                 raw_json = ?,
@@ -382,19 +395,120 @@ def rebuild_search_index(conn: sqlite3.Connection) -> None:
         )
 
 
+def list_own_account_ids(
+    conn: sqlite3.Connection,
+    *,
+    platforms: set[str] | None = None,
+) -> list[int]:
+    """Return account IDs for own dashboard sync accounts (never competitors).
+
+    Prefers configured Meta Instagram/page IDs when present in the DB; otherwise
+    falls back to every non-competitor account for the requested platforms.
+    """
+    from config import get_settings
+
+    settings = get_settings()
+    platforms = set(platforms) if platforms else {"instagram", "facebook"}
+    preferred: list[int] = []
+
+    if "instagram" in platforms and settings.meta_instagram_business_account_id:
+        row = conn.execute(
+            """
+            SELECT id FROM accounts
+            WHERE platform = 'instagram' AND external_id = ?
+              AND COALESCE(comparison_role, '') != 'competitor'
+            """,
+            (settings.meta_instagram_business_account_id,),
+        ).fetchone()
+        if row:
+            preferred.append(int(row["id"]))
+
+    if "facebook" in platforms and settings.meta_page_id:
+        row = conn.execute(
+            """
+            SELECT id FROM accounts
+            WHERE platform = 'facebook' AND external_id = ?
+              AND COALESCE(comparison_role, '') != 'competitor'
+            """,
+            (settings.meta_page_id,),
+        ).fetchone()
+        if row:
+            preferred.append(int(row["id"]))
+
+    # Comparison preference own account (Instagram) when configured.
+    if "instagram" in platforms:
+        pref = conn.execute(
+            "SELECT own_account_id FROM comparison_preferences WHERE id = 1"
+        ).fetchone()
+        if pref and pref["own_account_id"] is not None:
+            own_id = int(pref["own_account_id"])
+            role = conn.execute(
+                "SELECT comparison_role FROM accounts WHERE id = ?",
+                (own_id,),
+            ).fetchone()
+            if (
+                role is not None
+                and (role["comparison_role"] or "") != "competitor"
+                and own_id not in preferred
+            ):
+                preferred.append(own_id)
+
+    if preferred:
+        return preferred
+
+    sql = """
+        SELECT id FROM accounts
+        WHERE COALESCE(comparison_role, '') != 'competitor'
+    """
+    params: list[Any] = []
+    if platforms:
+        placeholders = ", ".join("?" for _ in platforms)
+        sql += f" AND platform IN ({placeholders})"
+        params.extend(sorted(platforms))
+    sql += " ORDER BY id"
+    return [int(row["id"]) for row in conn.execute(sql, params).fetchall()]
+
+
 def count_records(conn: sqlite3.Connection) -> dict[str, int]:
-    """Return simple record counts for sync summary."""
+    """Return sync summary counts for own accounts only (exclude competitors)."""
+    own_ids = list_own_account_ids(conn)
+    if not own_ids:
+        return {
+            "instagram_posts": 0,
+            "instagram_comments": 0,
+            "facebook_posts": 0,
+            "facebook_comments": 0,
+        }
+    placeholders = ", ".join("?" for _ in own_ids)
     return {
         "instagram_posts": conn.execute(
-            "SELECT COUNT(*) AS c FROM posts WHERE platform = 'instagram'"
+            f"""
+            SELECT COUNT(*) AS c FROM posts
+            WHERE platform = 'instagram' AND account_id IN ({placeholders})
+            """,
+            own_ids,
         ).fetchone()["c"],
         "instagram_comments": conn.execute(
-            "SELECT COUNT(*) AS c FROM comments WHERE platform = 'instagram'"
+            f"""
+            SELECT COUNT(*) AS c FROM comments c
+            JOIN posts p ON p.id = c.post_id
+            WHERE c.platform = 'instagram' AND p.account_id IN ({placeholders})
+            """,
+            own_ids,
         ).fetchone()["c"],
         "facebook_posts": conn.execute(
-            "SELECT COUNT(*) AS c FROM posts WHERE platform = 'facebook'"
+            f"""
+            SELECT COUNT(*) AS c FROM posts
+            WHERE platform = 'facebook' AND account_id IN ({placeholders})
+            """,
+            own_ids,
         ).fetchone()["c"],
         "facebook_comments": conn.execute(
-            "SELECT COUNT(*) AS c FROM comments WHERE platform = 'facebook'"
+            f"""
+            SELECT COUNT(*) AS c FROM comments c
+            JOIN posts p ON p.id = c.post_id
+            WHERE c.platform = 'facebook' AND p.account_id IN ({placeholders})
+            """,
+            own_ids,
         ).fetchone()["c"],
     }

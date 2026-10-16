@@ -212,6 +212,54 @@ Inspector-functionaliteit:
 
 Belangrijk: Inspector schrijft niets naar SQLite.
 
+## Social vergelijking (Business Discovery)
+
+De pagina **Social vergelijking** vergelijkt `@theartofliving.online` (eigen account + discovery-host) met concurrenten via Instagram Business Discovery. Concurrenten, posts en metingen worden in SQLite bewaard. Het scherm leest alleen uit de database; API-calls gebeuren uitsluitend bij een expliciete ophaalrun.
+
+Discovery-paginagrootte via `DISCOVERY_MEDIA_PAGE_SIZE` (standaard **25**). Grotere waarden worden niet aangenomen goedkoper of officieel ondersteund te zijn. Per HTTP-call worden duur, paginagrootte, aantal posts en veilige usage-headers gelogd. Bij onderbreking (o.a. rate limit) blijven opgehaalde pagina’s bewaard; de periode wordt als onvolledig gemarkeerd en hervat vanaf de cursor met deduplicatie op post-ID.
+
+Handmatig of via externe cron verversen:
+
+```powershell
+python scripts/refresh_comparison.py
+python scripts/refresh_comparison.py --force
+python scripts/refresh_comparison.py --resume-hoog
+python scripts/refresh_comparison.py --skip-own --only hoog.design
+```
+
+Na een Meta-fout `#4` (aanvraaglimiet) stopt discovery meteen, zonder retry-lussen; bestaande posts/metingen blijven staan. Met `Retry-After` wordt die wachttijd gerespecteerd (`--force` omzeilt die niet). Zonder `Retry-After`: status “Resetmoment onbekend” — informatief, blokkeert toekomstige aanvragen niet permanent. Gecontroleerd hervatten: knop **Hervat met hoog.design** of `--resume-hoog` (één aanvraag, geen retries, geen gelijktijdige runs; niet automatisch).
+
+### Deployment & database
+
+| Omgeving | Wat draait | Database |
+| --- | --- | --- |
+| **Lokaal (huidige werkcopy)** | Streamlit via `app.py` / venv | `DATABASE_PATH=data/social_search.db` (SQLite op schijf) |
+| **Railway / Render (repo-config)** | Alleen web: `streamlit run app.py …` (Procfile / `railway.toml` / `render.yaml`) | Standaard ook SQLite via `DATABASE_PATH`; **geen** persistent disk in de repo-config |
+
+Er is **geen** aparte scheduler-service in de repo. Stel **geen** aparte worker in met een eigen DB-kopie: webapp en dagelijkse job moeten dezelfde `DATABASE_PATH` (zelfde persistente volume) gebruiken.
+
+### Dagelijkse run (lokaal gepland — nog niet bewezen)
+
+Windows Taakplanner-taak **`META-Dashboard-Daily-Comparison`** is ingesteld (dagelijks 06:15 lokale tijd). Preflight van paden/DB is getest; een echte geslaagde Meta-run van deze taak is nog niet vastgelegd — noem dagelijks ophalen pas werkend na status `completed` / `completed_with_errors`.
+
+**Configuratie:**
+
+1. Trigger: dagelijks 06:15 (lokale Windows-tijd / Europe/Amsterdam).
+2. Actie → `powershell.exe` met wrapper `scripts\run_daily_comparison.ps1`
+   - Programma (venv): `.venv\Scripts\python.exe`
+   - CLI: `scripts\refresh_comparison.py --source daily`
+   - Starten in: projectroot `AutomationDashboardMETA`
+   - `DATABASE_PATH` = absoluut pad naar `data\social_search.db` (zelfde bestand als Streamlit)
+3. Geen overlap: Task Scheduler `MultipleInstances=IgnoreNew` + CLI `find_active_fetch_run`.
+4. Logs: `logs\daily_comparison_*.log` (status per account via CLI).
+5. Preflight zonder Meta: `python scripts/refresh_comparison.py --preflight` of `.\scripts\run_daily_comparison.ps1 -Preflight`.
+
+Als de app later op **Render** draait: Cron Job, schedule `15 4 * * *` (UTC = 06:15 Europe/Amsterdam in winter) of `15 5 * * *` in zomertijd, **zelfde** disk mount + `DATABASE_PATH` als de web service, startcommando:
+
+```bash
+cd /app && python scripts/refresh_comparison.py --source daily
+```
+
 ## Unit tests (zonder echte API-calls)
 
 De tests gebruiken HTTP mocking, dus er worden geen echte Meta API-calls gedaan:
@@ -222,6 +270,6 @@ pytest -q
 
 ## Huidige status
 
-- Dashboard toont basis UI met zoekveld.
-- Zoekfunctie en syncflow worden in volgende fases toegevoegd.
-- MVP blijft local-first: zoeken gebeurt straks alleen in SQLite.
+- Dashboard: zoeken, performance per maand, social vergelijking.
+- Vergelijkingsdata komt uit Meta Business Discovery + lokale metingen.
+- MVP blijft local-first voor zoeken in SQLite.

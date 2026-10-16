@@ -1,0 +1,30 @@
+﻿**********************
+Windows PowerShell transcript start
+Start time: 20261015113023
+Username: AzureAD\SandrinePrumpelerRed
+RunAs User: AzureAD\SandrinePrumpelerRed
+Configuration Name: 
+Machine: RROWIN01 (Microsoft Windows NT 10.0.26200.0)
+Host Application: C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\run_daily_comparison.ps1 -Preflight
+Process ID: 8240
+PSVersion: 5.1.26100.9444
+PSEdition: Desktop
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1.26100.9444
+BuildVersion: 10.0.26100.9444
+CLRVersion: 4.0.30319.42000
+WSManStackVersion: 3.0
+PSRemotingProtocolVersion: 2.3
+SerializationVersion: 1.1.0.1
+**********************
+project_root=C:\RRO\Projects\META-Dasboard-V2\AutomationDashboardMETA
+python=C:\RRO\Projects\META-Dasboard-V2\AutomationDashboardMETA\.venv\Scripts\python.exe
+database_path=C:\RRO\Projects\META-Dasboard-V2\AutomationDashboardMETA\data\social_search.db
+preflight=True
+started_at=2026-10-15T11:30:23.3854011+02:00
+
+exit_code=0
+finished_at=2026-10-15T11:30:24.2372422+02:00
+**********************
+Windows PowerShell transcript end
+End time: 20261015113024
+**********************

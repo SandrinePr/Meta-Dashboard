@@ -11,9 +11,11 @@ from config import get_settings
 from db.database import initialize_database
 from search.engine import get_recent_posts, search
 from sync import get_sync_summary, run_sync
+from ui.comparison import PAGE_TITLE, render_comparison_page
 from ui.components import (
     MIN_QUERY_LENGTH,
     inject_styles,
+    render_comparison_sidebar_button,
     render_filter_page_sidebar_button,
     render_performance_sidebar_button,
     render_results_section,
@@ -44,8 +46,18 @@ def main() -> None:
     inject_styles()
     logging.basicConfig(level=logging.INFO)
 
+    initialize_database()
+    totals = get_sync_summary()
+
+    if "last_sync_stats" not in st.session_state:
+        st.session_state.last_sync_stats = None
+    if "dashboard_page" not in st.session_state:
+        st.session_state.dashboard_page = "search"
+
+    page = st.session_state.dashboard_page
+    title = PAGE_TITLE if page == "comparison" else "Social Media Search Dashboard"
     st.markdown(
-        '<h1 class="rro-page-title">Social Media Search Dashboard</h1>',
+        f'<h1 class="rro-page-title">{title}</h1>',
         unsafe_allow_html=True,
     )
     st.markdown(
@@ -55,14 +67,6 @@ def main() -> None:
         "</div>",
         unsafe_allow_html=True,
     )
-
-    initialize_database()
-    totals = get_sync_summary()
-
-    if "last_sync_stats" not in st.session_state:
-        st.session_state.last_sync_stats = None
-    if "dashboard_page" not in st.session_state:
-        st.session_state.dashboard_page = "search"
 
     with st.sidebar:
         render_sidebar_stats(totals)
@@ -117,15 +121,14 @@ def main() -> None:
                 st.session_state.sync_running = False
             st.rerun()
 
-        render_performance_sidebar_button(
-            st.session_state.dashboard_page == "performance"
-        )
-        render_filter_page_sidebar_button(
-            st.session_state.dashboard_page == "search"
-        )
+        render_performance_sidebar_button(page == "performance")
+        render_filter_page_sidebar_button(page == "search")
+        render_comparison_sidebar_button(page == "comparison")
 
-    if st.session_state.dashboard_page == "performance":
+    if page == "performance":
         render_performance_tab()
+    elif page == "comparison":
+        render_comparison_page()
     else:
         _render_search_tab()
 

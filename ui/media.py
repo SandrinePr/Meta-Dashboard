@@ -46,6 +46,9 @@ def _is_displayable_image_url(value: str | None) -> bool:
     if not _is_valid_url(value):
         return False
     assert value is not None
+    path = urlparse(value).path.lower()
+    if path.endswith((".mp4", ".mov", ".m4v", ".webm")):
+        return False
     host = (urlparse(value).hostname or "").lower()
     if host in _BLOCKED_HOSTS:
         return False
@@ -182,20 +185,64 @@ def get_local_image_path_for_result(result) -> Path | None:
     return local_media_path(int(post_id))
 
 
-def get_image_for_search_result(result) -> tuple[str | None, str]:
-    """Resolve the best image URL for a search result card.
+def _resolve_post_image_from_db(post_id: int) -> tuple[str | None, str]:
+    """Resolve a displayable image for a post: local cache, then stored CDN URLs."""
+    path = local_media_path(post_id)
+    if path is not None:
+        return str(path), "local_cache"
 
-    Prefers a local file path (for ``st.image``). Falls back to a data URI only
-    when needed; Meta CDN URLs are never returned (they expire / 403).
+    with get_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT thumbnail_url, media_url, media_type, raw_json
+            FROM posts
+            WHERE id = ?
+            """,
+            (post_id,),
+        ).fetchone()
+    if not row:
+        return None, "none"
+
+    url, source = resolve_display_image_url(
+        thumbnail_url=row["thumbnail_url"],
+        media_url=row["media_url"],
+        media_type=row["media_type"],
+        raw_json=row["raw_json"],
+        prefer_thumbnail=True,
+    )
+    if url:
+        return url, source
+    return None, "no_image"
+
+
+def get_image_for_search_result(result) -> tuple[str | None, str]:
+    """Resolve the best image for a search/performance result card.
+
+    Prefers a local cached file for ``st.image``. Falls back to a stored
+    displayable CDN URL when present (local cache may lag behind sync).
     """
     path = get_local_image_path_for_result(result)
     if path is not None:
         return str(path), "local_cache"
-    return None, "no_local_cache"
+
+    if _is_displayable_image_url(getattr(result, "thumbnail_url", None)):
+        return result.thumbnail_url, "result.thumbnail_url"
+
+    if result.entity_type == "post":
+        return _resolve_post_image_from_db(int(result.entity_id))
+
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT post_id FROM comments WHERE id = ?",
+            (result.entity_id,),
+        ).fetchone()
+    if not row or row["post_id"] is None:
+        return None, "none"
+    return _resolve_post_image_from_db(int(row["post_id"]))
 
 
 def get_image_for_entity(entity_type: str, entity_id: int) -> tuple[str | None, str]:
-    """Load image path for a search result entity from local cache only."""
+    """Load image path/URL for a search result entity."""
     with get_connection() as conn:
         if entity_type == "post":
             post_id = entity_id
@@ -208,10 +255,7 @@ def get_image_for_entity(entity_type: str, entity_id: int) -> tuple[str | None, 
                 return None, "none"
             post_id = int(row["post_id"])
 
-    path = local_media_path(post_id)
-    if path is not None:
-        return str(path), "local_cache"
-    return None, "no_local_cache"
+    return _resolve_post_image_from_db(post_id)
 
 
 def _media_product_type_from_raw(raw_json: str | None) -> str:

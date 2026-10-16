@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import date
 
 from db.database import get_connection
+from db.repository import list_own_account_ids
 from meta.availability import is_post_unavailable
 from ui.media import extract_post_stats
 
@@ -77,17 +78,32 @@ def _months_between(newest: tuple[int, int], oldest: tuple[int, int]) -> list[tu
     return months
 
 
+def _own_account_clause(
+    platforms: set[str] | None,
+) -> tuple[str, list[object]]:
+    """SQL fragment + params restricting posts to own account IDs."""
+    with get_connection() as conn:
+        account_ids = list_own_account_ids(conn, platforms=platforms)
+    if not account_ids:
+        return " AND 1 = 0", []
+    placeholders = ", ".join("?" for _ in account_ids)
+    return f" AND account_id IN ({placeholders})", list(account_ids)
+
+
 def get_available_months(*, today: date | None = None) -> list[tuple[int, int]]:
-    """Return selectable calendar months from first post month through today."""
+    """Return selectable calendar months from first own-post month through today."""
+    account_clause, account_params = _own_account_clause(None)
     with get_connection() as conn:
         row = conn.execute(
-            """
+            f"""
             SELECT
                 MIN(strftime('%Y-%m', published_at)) AS min_ym,
                 MAX(strftime('%Y-%m', published_at)) AS max_ym
             FROM posts
             WHERE published_at IS NOT NULL AND published_at != ''
-            """
+            {account_clause}
+            """,
+            account_params,
         ).fetchone()
 
     current_date = today or date.today()
@@ -102,15 +118,18 @@ def get_available_months(*, today: date | None = None) -> list[tuple[int, int]]:
 
 
 def get_month_post_counts() -> dict[tuple[int, int], int]:
-    """Return post counts keyed by ``(year, month)``."""
+    """Return own-account post counts keyed by ``(year, month)``."""
+    account_clause, account_params = _own_account_clause(None)
     with get_connection() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT strftime('%Y-%m', published_at) AS ym, COUNT(*) AS c
             FROM posts
             WHERE published_at IS NOT NULL AND published_at != ''
+            {account_clause}
             GROUP BY ym
-            """
+            """,
+            account_params,
         ).fetchall()
     counts: dict[tuple[int, int], int] = {}
     for row in rows:
@@ -121,16 +140,19 @@ def get_month_post_counts() -> dict[tuple[int, int], int]:
 
 
 def get_latest_post_month() -> tuple[int, int] | None:
-    """Return the calendar month of the newest stored post."""
+    """Return the calendar month of the newest stored own-account post."""
+    account_clause, account_params = _own_account_clause(None)
     with get_connection() as conn:
         row = conn.execute(
-            """
+            f"""
             SELECT strftime('%Y-%m', published_at) AS ym
             FROM posts
             WHERE published_at IS NOT NULL AND published_at != ''
+            {account_clause}
             ORDER BY published_at DESC
             LIMIT 1
-            """
+            """,
+            account_params,
         ).fetchone()
     if not row or not row["ym"]:
         return None
@@ -144,7 +166,8 @@ def _fetch_posts_for_month(
     platforms: set[str] | None = None,
 ) -> list[dict]:
     ym = f"{year:04d}-{month:02d}"
-    query = """
+    account_clause, account_params = _own_account_clause(platforms)
+    query = f"""
         SELECT
             id,
             platform,
@@ -156,8 +179,9 @@ def _fetch_posts_for_month(
             raw_json
         FROM posts
         WHERE strftime('%Y-%m', published_at) = ?
+        {account_clause}
     """
-    params: list[object] = [ym]
+    params: list[object] = [ym, *account_params]
     if platforms:
         placeholders = ", ".join("?" for _ in platforms)
         query += f" AND platform IN ({placeholders})"
@@ -181,10 +205,11 @@ def get_monthly_top_posts(
     platforms: set[str] | None = None,
     limit: int = 3,
 ) -> dict[str, list[TopPost]]:
-    """Return top ``limit`` posts published in the month, ranked by current totals.
+    """Return top ``limit`` own-account posts published in the month.
 
-    Posts are filtered by publication month. Metric values are lifetime/current
-    totals from the last Meta sync (views until now), not a month-only snapshot.
+    Posts are filtered by publication month and own account IDs (never Social
+    vergelijking competitors). Metric values are lifetime/current totals from
+    the last Meta sync (views until now), not a month-only snapshot.
     """
     posts = _fetch_posts_for_month(year, month, platforms=platforms)
     ranked: dict[str, list[TopPost]] = {key: [] for key in METRIC_KEYS}
@@ -226,5 +251,5 @@ def count_posts_for_month(
     *,
     platforms: set[str] | None = None,
 ) -> int:
-    """Return number of available posts published in the given month."""
+    """Return number of available own-account posts published in the given month."""
     return len(_fetch_posts_for_month(year, month, platforms=platforms))

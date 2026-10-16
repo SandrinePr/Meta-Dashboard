@@ -312,6 +312,19 @@ def render_filter_page_sidebar_button(is_active: bool) -> None:
         st.rerun()
 
 
+def render_comparison_sidebar_button(is_active: bool) -> None:
+    """Open the social competitor comparison page from the sidebar."""
+    if st.button(
+        "Social vergelijking",
+        type="tertiary" if is_active else "primary",
+        icon=":material/compare:",
+        use_container_width=True,
+        key="nav_comparison",
+    ):
+        st.session_state.dashboard_page = "comparison"
+        st.rerun()
+
+
 def render_sidebar_stats(totals: dict) -> None:
     """Render sidebar sync statistics with icons."""
     st.markdown('<div class="rro-sidebar-title">Synchronisatie</div>', unsafe_allow_html=True)
@@ -590,13 +603,17 @@ def render_result_card(
     safe_date = html.escape(_format_date(result.published_at))
     unavailable = is_result_unavailable(result)
 
-    image_path = get_local_image_path_for_result(result)
     image_url, image_source = get_image_for_search_result(result)
+    image_path = get_local_image_path_for_result(result)
+    # Local path preferred; otherwise a stored CDN URL (validated as displayable).
+    display_image = image_path or (
+        image_url if image_url and not str(image_url).startswith("data:") else None
+    )
     logger.debug(
-        "Result image entity=%s/%s path=%s source=%s",
+        "Result image entity=%s/%s display=%s source=%s",
         result.entity_type,
         result.entity_id,
-        image_path or image_url,
+        display_image,
         image_source,
     )
 
@@ -647,8 +664,8 @@ def render_result_card(
         )
         thumb_col, body_col, action_col = st.columns([1.05, 4.2, 1.35], gap="small")
         with thumb_col:
-            if image_path is not None:
-                st.image(str(image_path), use_container_width=True)
+            if display_image is not None:
+                st.image(str(display_image), use_container_width=True)
             else:
                 st.markdown(
                     '<div class="rro-thumb-placeholder">Geen thumbnail</div>',

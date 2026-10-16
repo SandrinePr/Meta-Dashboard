@@ -1,0 +1,88 @@
+{
+  "generated_at_utc": "2026-10-15T13:31:53.616712+00:00",
+  "graph_api_version": "v25.0",
+  "probe_status": "deferred",
+  "probe_defer_reason": {
+    "route": "business_discovery",
+    "error_code": 4,
+    "hit_at": "2026-10-15T12:41:37.742649+00:00",
+    "blocked_until": null,
+    "reset_moment_known": false,
+    "retry_after_seconds": null,
+    "usage_headers_saved": {
+      "x-app-usage": {
+        "call_count": 7,
+        "total_cputime": 0,
+        "total_time": 103
+      }
+    },
+    "active_fetch_run": null,
+    "policy": "recente #4 zonder resetmoment → geen Meta-proefrequests"
+  },
+  "own_page": {
+    "configured_page_id": "1406493872915520",
+    "linked_instagram": "theartofliving.online",
+    "page_name_proven": false,
+    "page_name_note": "Niet live opgevraagd; lokaal geen name opgeslagen. Page-ID aantoonbaar via .env + IG page_id-koppeling + 523 lokale FB-posts.",
+    "tokens_configured": {
+      "user": true,
+      "page": true,
+      "app_secret": true
+    },
+    "local_post_count": 523,
+    "local_published_range": {
+      "oldest": "2025-01-17T20:00:39+00:00",
+      "newest": "2026-07-14T06:05:26+00:00"
+    },
+    "secondary_local_page_id": "1250668924787978",
+    "secondary_local_posts": 15,
+    "secondary_note": "Aanwezig in DB, niet META_PAGE_ID; identiteit onbevestigd zonder API."
+  },
+  "competitor_pages": [
+    {
+      "brand": "HOOG.design",
+      "page_name": "HOOG.design",
+      "url": "https://www.facebook.com/HOOG.design.inspiratieplatform/",
+      "page_id": null,
+      "identity_confidence": "high",
+      "evidence": "Link op officiële site hoog.design/nl/linkinbio; FB-title HOOG.design | Helmond"
+    },
+    {
+      "brand": "Best Interiors",
+      "page_name": "Best Interiors",
+      "url": "https://www.facebook.com/bestinteriorshomeofficegarden",
+      "page_id": null,
+      "identity_confidence": "high",
+      "evidence": "Link op officiële site bestinteriors.nl; FB-title Best Interiors"
+    },
+    {
+      "brand": "Excellent",
+      "page_name": "Excellent wonen & leven",
+      "url": "https://www.facebook.com/EXCELLENTmagazine.nl/",
+      "page_id": null,
+      "identity_confidence": "high",
+      "evidence": "Link op excellentmagazine.nl (+ contact); FB-title Excellent wonen & leven | Eindhoven; adres match Eindhoven"
+    },
+    {
+      "brand": "VT Wonen",
+      "page_name": "vtwonen",
+      "url": "https://www.facebook.com/vtwonen",
+      "page_id": null,
+      "identity_confidence": "medium",
+      "evidence": "FB-pagina met titel vtwonen bestaat; officiële site gaf in deze sessie geen FB-link (DPG privacy gate). Geen Page-ID."
+    }
+  ],
+  "local_own_post_field_coverage_last20": {
+    "id": "20/20",
+    "created_time": "20/20",
+    "permalink_url": "20/20",
+    "likes.summary": "20/20",
+    "reactions.summary": "11/20",
+    "comments.summary": "20/20",
+    "shares": "6/20 (anders onbekend, niet 0)",
+    "attachments.type_as_posttype_proxy": "20/20",
+    "classic_type_field": "0/20",
+    "fan_count_or_followers_on_post": "niet in postpayload"
+  },
+  "meta_api_calls_this_investigation": 0
+}
