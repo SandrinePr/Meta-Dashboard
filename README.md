@@ -234,9 +234,22 @@ Na een Meta-fout `#4` (aanvraaglimiet) stopt discovery meteen, zonder retry-luss
 | Omgeving | Wat draait | Database |
 | --- | --- | --- |
 | **Lokaal (huidige werkcopy)** | Streamlit via `app.py` / venv | `DATABASE_PATH=data/social_search.db` (SQLite op schijf) |
-| **Railway / Render (repo-config)** | Alleen web: `streamlit run app.py …` (Procfile / `railway.toml` / `render.yaml`) | Standaard ook SQLite via `DATABASE_PATH`; **geen** persistent disk in de repo-config |
+| **Render (repo-config)** | Web: `streamlit run app.py …` (`render.yaml`, plan `free`) | Ephemeral SQLite via `DATABASE_PATH=data/social_search.db`; geen persistent disk |
 
-Er is **geen** aparte scheduler-service in de repo. Stel **geen** aparte worker in met een eigen DB-kopie: webapp en dagelijkse job moeten dezelfde `DATABASE_PATH` (zelfde persistente volume) gebruiken.
+Runtime-DB en back-ups staan in `.gitignore` (`data/*.db`, `data/backups/`). Alleen `seed_social_search.db` / media-seed gaan mee in Git.
+
+Historische vergelijkingsmetingen (offline, zonder Meta-API) samenvoegen — **live-first**: eerst de live/target-DB veiligstellen, daarna V2-bron erin mergen (nooit live overschrijven met een lokaal mergebestand):
+
+```powershell
+python scripts/merge_comparison_history.py `
+  --source path\to\v2_social_search.db `
+  --target path\to\live_social_search.db `
+  --backup-dir data\backups
+```
+
+Het script maakt eerst back-ups, behoudt bestaande target-metingen, en voegt alleen ontbrekende **rechtstreeks opgeslagen** metingen toe op basis van `(platform, external_id, measured_at)`. Logtijden gelden niet als meettijd.
+
+Er is **geen** aparte scheduler-service in de repo. Stel **geen** aparte worker in met een eigen DB-kopie: webapp en dagelijkse job moeten dezelfde database gebruiken.
 
 ### Dagelijkse run (lokaal gepland — nog niet bewezen)
 
