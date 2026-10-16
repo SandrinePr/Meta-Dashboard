@@ -20,6 +20,16 @@ TMP = ROOT / "data" / "seed_tmp.db"
 
 
 def main() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Build deployable seed DB for Render.")
+    parser.add_argument(
+        "--skip-thumbnails",
+        action="store_true",
+        help="Do not download missing thumbnails; zip existing media only.",
+    )
+    args = parser.parse_args()
+
     if not SRC.exists():
         raise SystemExit(f"Source DB not found: {SRC}")
 
@@ -95,10 +105,33 @@ def main() -> None:
     # Cache thumbnails next so Render can show images without live CDN URLs.
     import subprocess
 
-    subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "cache_thumbnails.py")],
-        check=True,
-    )
+    if args.skip_thumbnails:
+        import zipfile
+
+        media_dir = ROOT / "data" / "media"
+        thumbs_dir = ROOT / "data" / "thumbnails"
+        media_dir.mkdir(parents=True, exist_ok=True)
+        if thumbs_dir.exists():
+            for thumb in thumbs_dir.glob("*.jpg"):
+                dest = media_dir / f"post_{thumb.stem}.jpg"
+                if not dest.exists():
+                    shutil.copy2(thumb, dest)
+        seed_zip = ROOT / "data" / "seed_media.zip"
+        if seed_zip.exists():
+            seed_zip.unlink()
+        files = sorted(media_dir.glob("post_*.jpg"))
+        with zipfile.ZipFile(seed_zip, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for path in files:
+                zf.write(path, arcname=path.name)
+        print(
+            f"Wrote {seed_zip} "
+            f"({seed_zip.stat().st_size / 1024 / 1024:.2f} MB, {len(files)} files)"
+        )
+    else:
+        subprocess.run(
+            [sys.executable, str(ROOT / "scripts" / "cache_thumbnails.py")],
+            check=True,
+        )
 
     version_path = ROOT / "data" / "seed_version.txt"
     version_path.write_text(
