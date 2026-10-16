@@ -218,31 +218,17 @@ def _resolve_post_image_from_db(post_id: int) -> tuple[str | None, str]:
 def get_image_for_search_result(result) -> tuple[str | None, str]:
     """Resolve the best image for a search/performance result card.
 
-    Prefers a local cached file for ``st.image``. Falls back to a stored
-    displayable CDN URL when present (local cache may lag behind sync).
+    Prefers a local cached file for ``st.image``. Meta CDN URLs are never
+    returned: they expire and typically 403, especially from Render.
     """
     path = get_local_image_path_for_result(result)
     if path is not None:
         return str(path), "local_cache"
-
-    if _is_displayable_image_url(getattr(result, "thumbnail_url", None)):
-        return result.thumbnail_url, "result.thumbnail_url"
-
-    if result.entity_type == "post":
-        return _resolve_post_image_from_db(int(result.entity_id))
-
-    with get_connection() as conn:
-        row = conn.execute(
-            "SELECT post_id FROM comments WHERE id = ?",
-            (result.entity_id,),
-        ).fetchone()
-    if not row or row["post_id"] is None:
-        return None, "none"
-    return _resolve_post_image_from_db(int(row["post_id"]))
+    return None, "no_local_cache"
 
 
 def get_image_for_entity(entity_type: str, entity_id: int) -> tuple[str | None, str]:
-    """Load image path/URL for a search result entity."""
+    """Load image path for a search result entity from local cache only."""
     with get_connection() as conn:
         if entity_type == "post":
             post_id = entity_id
@@ -255,7 +241,10 @@ def get_image_for_entity(entity_type: str, entity_id: int) -> tuple[str | None, 
                 return None, "none"
             post_id = int(row["post_id"])
 
-    return _resolve_post_image_from_db(post_id)
+    path = local_media_path(post_id)
+    if path is not None:
+        return str(path), "local_cache"
+    return None, "no_local_cache"
 
 
 def _media_product_type_from_raw(raw_json: str | None) -> str:

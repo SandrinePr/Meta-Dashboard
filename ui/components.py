@@ -605,10 +605,8 @@ def render_result_card(
 
     image_url, image_source = get_image_for_search_result(result)
     image_path = get_local_image_path_for_result(result)
-    # Local path preferred; otherwise a stored CDN URL (validated as displayable).
-    display_image = image_path or (
-        image_url if image_url and not str(image_url).startswith("data:") else None
-    )
+    # Local files only. Meta CDN URLs expire and 403 on Render.
+    display_image = image_path
     logger.debug(
         "Result image entity=%s/%s display=%s source=%s",
         result.entity_type,
