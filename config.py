@@ -24,6 +24,7 @@ class Settings:
     meta_page_access_token: str
     meta_instagram_business_account_id: str
     sync_page_size: int
+    discovery_media_page_size: int
     request_timeout_seconds: int
 
 
@@ -51,5 +52,9 @@ def get_settings() -> Settings:
         meta_page_access_token=os.getenv("META_PAGE_ACCESS_TOKEN", ""),
         meta_instagram_business_account_id=os.getenv("META_INSTAGRAM_BUSINESS_ACCOUNT_ID", ""),
         sync_page_size=int(os.getenv("SYNC_PAGE_SIZE", "100")),
+        # Business Discovery media page size. Default 25; do not assume larger is cheaper.
+        discovery_media_page_size=max(
+            1, int(os.getenv("DISCOVERY_MEDIA_PAGE_SIZE", "25"))
+        ),
         request_timeout_seconds=int(os.getenv("REQUEST_TIMEOUT_SECONDS", "30")),
     )

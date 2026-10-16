@@ -8,6 +8,7 @@ from datetime import date
 from difflib import SequenceMatcher
 
 from db.database import get_connection
+from db.repository import list_own_account_ids
 
 _TERM_PATTERN = re.compile(r"[A-Za-z0-9_]+")
 _HASHTAG_PATTERN = re.compile(r"#([A-Za-z0-9_]+)")
@@ -423,17 +424,47 @@ def _row_to_result(row) -> SearchResult:
     )
 
 
+def _own_account_ids_for_platforms(platforms: set[str] | None) -> list[int]:
+    """Own dashboard account IDs for the selected platforms (never competitors)."""
+    with get_connection() as conn:
+        return list_own_account_ids(conn, platforms=platforms)
+
+
+def _own_account_sql_filter(
+    account_ids: list[int],
+    *,
+    post_alias: str = "p",
+    comment_post_alias: str = "cp",
+) -> tuple[str, list[object]]:
+    """Restrict hits to posts/comments belonging to own accounts."""
+    if not account_ids:
+        return " AND 1 = 0", []
+    placeholders = ", ".join("?" for _ in account_ids)
+    clause = f"""
+      AND (
+        (hits.entity_type = 'post' AND {post_alias}.account_id IN ({placeholders}))
+        OR (hits.entity_type = 'comment' AND {comment_post_alias}.account_id IN ({placeholders}))
+      )
+    """
+    return clause, [*account_ids, *account_ids]
+
+
 def get_recent_posts(
     *,
     platforms: set[str] | None = None,
     limit: int = 20,
 ) -> list[SearchResult]:
-    """Return the newest posts from the local database (no search query)."""
+    """Return the newest own-account posts from the local database (no search query)."""
     platforms = platforms or {"instagram", "facebook"}
     if not platforms:
         platforms = {"instagram", "facebook"}
 
-    placeholders = ", ".join("?" for _ in platforms)
+    account_ids = _own_account_ids_for_platforms(platforms)
+    if not account_ids:
+        return []
+
+    plat_ph = ", ".join("?" for _ in platforms)
+    acc_ph = ", ".join("?" for _ in account_ids)
     sql = f"""
         SELECT
             'post' AS entity_type,
@@ -457,13 +488,14 @@ def get_recent_posts(
             NULL AS author_name
         FROM posts p
         LEFT JOIN accounts a ON a.id = p.account_id
-        WHERE p.platform IN ({placeholders})
+        WHERE p.platform IN ({plat_ph})
+          AND p.account_id IN ({acc_ph})
           AND p.published_at IS NOT NULL
           AND p.published_at != ''
         ORDER BY p.published_at DESC
         LIMIT ?
     """
-    params: list[object] = [*sorted(platforms), limit]
+    params: list[object] = [*sorted(platforms), *account_ids, limit]
     with get_connection() as conn:
         rows = conn.execute(sql, params).fetchall()
     return [_row_to_result(row) for row in rows]
@@ -549,6 +581,11 @@ def search(
     if not fts_query and not like_seed:
         return []
 
+    account_ids = _own_account_ids_for_platforms(platforms)
+    if not account_ids:
+        return []
+    own_filter_sql, own_filter_params = _own_account_sql_filter(account_ids)
+
     candidate_limit = max(limit * _CANDIDATE_LIMIT_FACTOR, _CANDIDATE_LIMIT_MIN)
     rows_by_key: dict[tuple[str, int], object] = {}
 
@@ -579,6 +616,8 @@ def search(
             fts_inner += " ORDER BY published_at DESC LIMIT ?"
             fts_params.append(candidate_limit)
             fts_sql = _ENRICH_SELECT.format(inner_sql=fts_inner)
+            fts_sql += own_filter_sql
+            fts_params.extend(own_filter_params)
             _store(conn.execute(fts_sql, fts_params).fetchall())
 
         # 2) LIKE seed candidates (text/hashtags/platform + account/author fields).
@@ -629,6 +668,15 @@ def search(
                 start_date=start_date,
                 end_date=end_date,
             )
+            # Own-account restriction (same aliases as enrich joins).
+            like_acc_ph = ", ".join("?" for _ in account_ids)
+            like_sql += f"""
+              AND (
+                (search_index.entity_type = 'post' AND p.account_id IN ({like_acc_ph}))
+                OR (search_index.entity_type = 'comment' AND cp.account_id IN ({like_acc_ph}))
+              )
+            """
+            like_params.extend([*account_ids, *account_ids])
             like_sql += " ORDER BY search_index.published_at DESC LIMIT ?"
             like_params.append(candidate_limit)
             _store(conn.execute(like_sql, like_params).fetchall())

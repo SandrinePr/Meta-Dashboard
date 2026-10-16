@@ -125,21 +125,56 @@ def ensure_seed_database(db_path: Path | None = None) -> bool:
         return False
 
     runtime_empty = _post_count(effective_db_path) == 0
+
+    def _has_comparison_data(db_path: Path) -> bool:
+        if not db_path.exists():
+            return False
+        try:
+            with sqlite3.connect(db_path) as probe:
+                tables = {
+                    str(row[0])
+                    for row in probe.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table'"
+                    ).fetchall()
+                }
+                if "comparison_fetch_runs" in tables:
+                    if int(
+                        probe.execute(
+                            "SELECT COUNT(*) FROM comparison_fetch_runs"
+                        ).fetchone()[0]
+                    ):
+                        return True
+                if "account_measurements" in tables:
+                    if int(
+                        probe.execute(
+                            "SELECT COUNT(*) FROM account_measurements"
+                        ).fetchone()[0]
+                    ):
+                        return True
+        except sqlite3.Error:
+            return False
+        return False
+
+    protect_comparison = _has_comparison_data(effective_db_path)
     seed_newer = (
         effective_db_path.exists()
         and SEED_DB_PATH.stat().st_mtime > effective_db_path.stat().st_mtime
+        and not protect_comparison
     )
-    # mtime alone fails on Render persistent disks: runtime keeps getting written,
-    # so a newly deployed seed can look "older" even when content changed.
+    # Only replace runtime when the bundled seed clearly has *more* content.
+    # Never wipe a runtime DB that grew past the seed (e.g. comparison posts).
     seed_content_changed = False
-    if effective_db_path.exists() and not runtime_empty:
-        seed_content_changed = (
-            _post_count(SEED_DB_PATH) != _post_count(effective_db_path)
-            or SEED_DB_PATH.stat().st_size != effective_db_path.stat().st_size
-        )
+    if effective_db_path.exists() and not runtime_empty and not protect_comparison:
+        seed_posts = _post_count(SEED_DB_PATH)
+        runtime_posts = _post_count(effective_db_path)
+        seed_content_changed = seed_posts > runtime_posts
     bundled_version = _read_seed_version(SEED_VERSION_PATH)
     runtime_version = _read_seed_version(_runtime_seed_version_path(effective_db_path))
-    seed_version_changed = bool(bundled_version) and bundled_version != runtime_version
+    seed_version_changed = (
+        bool(bundled_version)
+        and bundled_version != runtime_version
+        and not protect_comparison
+    )
     if runtime_empty or seed_newer or seed_content_changed or seed_version_changed:
         reason = (
             "empty"
@@ -171,6 +206,8 @@ def ensure_seed_database(db_path: Path | None = None) -> bool:
 
 def initialize_database(db_path: Path | None = None, schema_path: Path | None = None) -> None:
     """Create all tables and indexes from schema.sql, seeding first if needed."""
+    from db.migrate import apply_comparison_schema
+
     settings = get_settings()
     effective_db_path = db_path or settings.database_path
     effective_schema_path = schema_path or Path(__file__).with_name("schema.sql")
@@ -180,3 +217,5 @@ def initialize_database(db_path: Path | None = None, schema_path: Path | None = 
     schema_sql = effective_schema_path.read_text(encoding="utf-8")
     with get_connection(effective_db_path) as conn:
         conn.executescript(schema_sql)
+        apply_comparison_schema(conn)
+        conn.commit()

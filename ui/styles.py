@@ -2,7 +2,7 @@
 
 RRO_CSS = """
 <style>
-/* rro-css-v29-nav-active-navy-orange */
+/* rro-css-v32-comparison-fullwidth */
 @import url('https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&display=swap');
 
 :root {
@@ -353,6 +353,45 @@ section[data-testid="stSidebar"] button[data-testid="stBaseButton-secondary"] p,
 section[data-testid="stSidebar"] button[data-testid="stBaseButton-tertiary"] p,
 section[data-testid="stSidebar"] [data-testid="stBaseButton-secondary"] p,
 section[data-testid="stSidebar"] [data-testid="stBaseButton-tertiary"] p {
+    color: #FFFFFF !important;
+}
+
+/* Keep page navigation under the sync block, stretched to the bottom */
+section[data-testid="stSidebar"] [data-testid="stSidebarContent"] {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+section[data-testid="stSidebar"] [data-testid="stSidebarUserContent"] {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+section[data-testid="stSidebar"] [data-testid="stSidebarUserContent"]
+    > [data-testid="stVerticalBlock"] {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    min-height: 100%;
+}
+
+section[data-testid="stSidebar"] .st-key-nav_performance {
+    margin-top: auto !important;
+    padding-top: 1rem !important;
+}
+
+section[data-testid="stSidebar"] .st-key-nav_comparison button {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 0.45rem !important;
+}
+
+section[data-testid="stSidebar"] .st-key-nav_comparison button span,
+section[data-testid="stSidebar"] .st-key-nav_comparison button [data-testid="stIconMaterial"] {
     color: #FFFFFF !important;
 }
 
@@ -1482,6 +1521,7 @@ a.rro-btn-link:focus-visible {
     font-weight: 800;
 }
 
+.rro-empty-state,
 .rro-performance-empty {
     margin: 0 0 0.75rem 0;
     padding: 12px 14px;
@@ -1489,6 +1529,210 @@ a.rro-btn-link:focus-visible {
     border: 1px dashed var(--rro-border);
     color: var(--rro-text-muted);
     font-size: 0.84rem;
+}
+
+[data-testid="stSelectbox"] label,
+[data-testid="stSelectbox"] label p {
+    color: var(--rro-text) !important;
+    font-size: 0.82rem !important;
+    font-weight: 700 !important;
+    margin-bottom: 0.2rem !important;
+}
+
+[data-testid="stSelectbox"] div[data-baseweb="select"] > div {
+    background-color: #4B5560 !important;
+    color: var(--rro-text) !important;
+    border: 1px solid var(--rro-border) !important;
+    border-radius: var(--rro-radius-sm) !important;
+    min-height: var(--rro-control-h) !important;
+    box-shadow: none !important;
+}
+
+[data-testid="stSelectbox"] div[data-baseweb="select"] > div:hover,
+[data-testid="stSelectbox"] div[data-baseweb="select"] > div[aria-expanded="true"] {
+    background-color: var(--rro-input-hover) !important;
+    border-color: var(--rro-border) !important;
+    box-shadow: none !important;
+}
+
+[data-testid="stSelectbox"] svg {
+    fill: var(--rro-text) !important;
+}
+
+.rro-comparison-label {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    margin: 0 0 0.35rem 0;
+    color: var(--rro-text);
+    font-size: 0.82rem;
+    font-weight: 700;
+}
+
+.rro-comparison-label span {
+    color: var(--rro-text-muted);
+    font-weight: 600;
+}
+
+.rro-comparison-error {
+    margin: 0.15rem 0 0.45rem 0;
+    color: #E7C4A8;
+    font-size: 0.82rem;
+    font-weight: 600;
+}
+
+.rro-competitor-name {
+    display: flex;
+    align-items: center;
+    min-height: var(--rro-control-h);
+    padding: 0 0.85rem;
+    border: 1px solid var(--rro-border);
+    border-radius: var(--rro-radius-sm);
+    background: #1A2230;
+    color: var(--rro-text);
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+/* Compact “+” under the competitor list (Streamlit maps help= to title) */
+button[title="Concurrent toevoegen"] {
+    min-width: 2.5rem !important;
+    padding-left: 0.55rem !important;
+    padding-right: 0.55rem !important;
+    font-size: 1.25rem !important;
+    font-weight: 700 !important;
+    line-height: 1 !important;
+}
+
+.rro-comparison-block {
+    margin: 0.35rem 0 0.5rem 0;
+}
+
+.rro-comparison-section {
+    margin: 0.35rem 0 0.45rem 0;
+    padding-bottom: 0.35rem;
+    border-bottom: 1px solid var(--rro-border);
+    color: var(--rro-text);
+    font-size: 1.05rem;
+    font-weight: 700;
+    line-height: 1.35;
+}
+
+.rro-comparison-note {
+    margin: 0 0 0.65rem 0;
+    color: var(--rro-text-muted);
+    font-size: 0.86rem;
+    line-height: 1.4;
+}
+
+.rro-comparison-growth .rro-empty-state {
+    min-height: 120px;
+    display: flex;
+    align-items: center;
+}
+
+[data-testid="stMarkdownContainer"] .rro-comparison-table-wrap,
+.rro-comparison-table-wrap {
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow-x: auto !important;
+    margin: 0 0 0.75rem 0 !important;
+    border: 1px solid var(--rro-border) !important;
+    border-radius: var(--rro-radius-sm) !important;
+    background: #1A2230 !important;
+    box-sizing: border-box !important;
+}
+
+[data-testid="stMarkdownContainer"] table.rro-comparison-table,
+table.rro-comparison-table {
+    width: 100% !important;
+    min-width: 720px !important;
+    border-collapse: collapse !important;
+    table-layout: auto !important;
+    color: var(--rro-text) !important;
+    font-size: 0.84rem !important;
+    line-height: 1.35 !important;
+    margin: 0 !important;
+}
+
+table.rro-comparison-table th,
+table.rro-comparison-table td {
+    padding: 10px 10px !important;
+    border-bottom: 1px solid var(--rro-border) !important;
+    vertical-align: top !important;
+    text-align: left !important;
+    overflow-wrap: anywhere !important;
+    word-break: break-word !important;
+    min-width: 0 !important;
+}
+
+table.rro-comparison-table th {
+    color: var(--rro-text-muted) !important;
+    font-size: 0.72rem !important;
+    font-weight: 700 !important;
+    background: #151C28 !important;
+}
+
+table.rro-comparison-table tr:last-child td {
+    border-bottom: 0 !important;
+}
+
+table.rro-comparison-table .rro-num {
+    text-align: right !important;
+    font-variant-numeric: tabular-nums !important;
+    white-space: nowrap !important;
+}
+
+table.rro-comparison-table .rro-muted {
+    color: var(--rro-text-muted) !important;
+    font-style: italic !important;
+    text-align: left !important;
+}
+
+table.rro-comparison-table th {
+    white-space: nowrap !important;
+}
+
+table.rro-comparison-table .rro-account-cell strong {
+    display: block !important;
+    color: var(--rro-text) !important;
+}
+
+table.rro-comparison-table small,
+.rro-comparison-top-row small,
+.rro-comparison-growth-row small {
+    color: var(--rro-text-muted) !important;
+    font-size: 0.74rem !important;
+}
+
+.rro-comparison-top-row,
+.rro-comparison-growth-row {
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    margin: 0 0 0.55rem 0 !important;
+    padding: 10px 12px !important;
+    border: 1px solid var(--rro-border) !important;
+    border-radius: var(--rro-radius-sm) !important;
+    background: #1A2230 !important;
+    color: var(--rro-text) !important;
+    font-size: 0.84rem !important;
+    line-height: 1.35 !important;
+    overflow-wrap: anywhere !important;
+}
+
+.rro-comparison-top-row {
+    display: grid !important;
+    grid-template-columns: 42px minmax(0, 1fr) !important;
+    gap: 8px !important;
+    align-items: start !important;
+}
+
+.rro-comparison-top-rank {
+    font-weight: 800 !important;
+    color: var(--rro-cta) !important;
 }
 </style>
 """

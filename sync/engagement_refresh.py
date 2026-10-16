@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 
 from config import get_settings
 from db.database import get_connection
-from db.repository import mark_post_unavailable, merge_post_raw_json
+from db.repository import list_own_account_ids, mark_post_unavailable, merge_post_raw_json
 from meta.availability import is_unavailable_meta_error
 from meta.client import MetaClient, MetaClientError, format_meta_client_error
 from meta.endpoints import (
@@ -264,20 +264,24 @@ def month_insights_are_fresh(
     platforms: set[str] | None = None,
     max_age_hours: int = 12,
 ) -> bool:
-    """Return True when posts for the month were synced within ``max_age_hours``."""
+    """Return True when own-account posts for the month were synced within ``max_age_hours``."""
     ym = f"{year:04d}-{month:02d}"
-    query = """
-        SELECT MIN(last_synced_at) AS oldest
-        FROM posts
-        WHERE strftime('%Y-%m', published_at) = ?
-    """
-    params: list[object] = [ym]
-    if platforms:
-        placeholders = ", ".join("?" for _ in platforms)
-        query += f" AND platform IN ({placeholders})"
-        params.extend(sorted(platforms))
-
     with get_connection() as conn:
+        account_ids = list_own_account_ids(conn, platforms=platforms)
+        if not account_ids:
+            return False
+        placeholders = ", ".join("?" for _ in account_ids)
+        query = f"""
+            SELECT MIN(last_synced_at) AS oldest
+            FROM posts
+            WHERE strftime('%Y-%m', published_at) = ?
+              AND account_id IN ({placeholders})
+        """
+        params: list[object] = [ym, *account_ids]
+        if platforms:
+            plat_ph = ", ".join("?" for _ in platforms)
+            query += f" AND platform IN ({plat_ph})"
+            params.extend(sorted(platforms))
         row = conn.execute(query, params).fetchone()
 
     oldest = row["oldest"] if row else None
@@ -300,24 +304,28 @@ def refresh_month_insights(
     platforms: set[str] | None = None,
     insights_only: bool = False,
 ) -> RefreshInsightsStats:
-    """Refresh insights for all posts published in a calendar month."""
+    """Refresh insights for own-account posts published in a calendar month."""
     settings = get_settings()
     if not settings.meta_page_access_token:
         return RefreshInsightsStats()
 
     ym = f"{year:04d}-{month:02d}"
-    query = """
-        SELECT id, platform, external_id, raw_json
-        FROM posts
-        WHERE strftime('%Y-%m', published_at) = ?
-    """
-    params: list[object] = [ym]
-    if platforms:
-        placeholders = ", ".join("?" for _ in platforms)
-        query += f" AND platform IN ({placeholders})"
-        params.extend(sorted(platforms))
-
     with get_connection() as conn:
+        account_ids = list_own_account_ids(conn, platforms=platforms)
+        if not account_ids:
+            return RefreshInsightsStats()
+        placeholders = ", ".join("?" for _ in account_ids)
+        query = f"""
+            SELECT id, platform, external_id, raw_json
+            FROM posts
+            WHERE strftime('%Y-%m', published_at) = ?
+              AND account_id IN ({placeholders})
+        """
+        params: list[object] = [ym, *account_ids]
+        if platforms:
+            plat_ph = ", ".join("?" for _ in platforms)
+            query += f" AND platform IN ({plat_ph})"
+            params.extend(sorted(platforms))
         rows = [dict(row) for row in conn.execute(query, params).fetchall()]
 
     try:
