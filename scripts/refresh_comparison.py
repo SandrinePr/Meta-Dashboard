@@ -6,6 +6,7 @@ This command does not start a background scheduler by itself.
 Usage:
   python scripts/refresh_comparison.py
   python scripts/refresh_comparison.py --force
+  python scripts/refresh_comparison.py --mode growth
   python scripts/refresh_comparison.py --resume-hoog
   python scripts/refresh_comparison.py --resume bestinteriors_official
 """
@@ -177,6 +178,12 @@ def main() -> int:
             "checkpoint isolation without any Meta requests."
         ),
     )
+    parser.add_argument(
+        "--mode",
+        choices=("growth", "full"),
+        default="full",
+        help="growth=follower snapshots only; full=profiles + posts (default).",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
@@ -215,6 +222,7 @@ def main() -> int:
             force=args.force,
             only_usernames=args.only or None,
             include_own=not args.skip_own,
+            mode=args.mode,
         )
     print(f"status={result.status} run_id={result.run_id}")
     if result.rate_limited:

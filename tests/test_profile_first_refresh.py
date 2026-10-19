@@ -286,3 +286,62 @@ def test_unexpected_error_finishes_running_fetch_run(
         ).fetchone()
         assert run["status"] == "failed"
         assert run["finished_at"] is not None
+
+
+def test_growth_mode_skips_competitor_media(tmp_path: Path, monkeypatch) -> None:
+    _setup(tmp_path, monkeypatch)
+    with get_connection() as conn:
+        _seed_accounts(conn)
+
+    profile_calls: list[str] = []
+    media_calls: list[str] = []
+
+    def fake_profile(client, host_ig_id, username, **kwargs):
+        assert kwargs.get("include_media") is False
+        profile_calls.append(username)
+        followers = {
+            "excellent.magazine": 100,
+            "vtwonen": 200,
+            "bestinteriors_official": 300,
+            "hoog.design": 50,
+        }.get(username, 1)
+        ext = {
+            "excellent.magazine": "ig-ex",
+            "vtwonen": "ig-vt",
+            "bestinteriors_official": "ig-bi",
+            "hoog.design": "ig-hoog",
+        }[username]
+        return _profile_discovery(username, followers, ext), _meta_ok()
+
+    def fake_media_pages(client, host_ig_id, username, **kwargs):
+        media_calls.append(username)
+        ext = {
+            "excellent.magazine": "ig-ex",
+            "vtwonen": "ig-vt",
+            "bestinteriors_official": "ig-bi",
+            "hoog.design": "ig-hoog",
+        }[username]
+        yield _empty_media_page(username, ext)
+
+    monkeypatch.setattr("sync.comparison.MetaClient.from_settings", lambda: object())
+    monkeypatch.setattr("sync.comparison.fetch_business_discovery", fake_profile)
+    monkeypatch.setattr("sync.comparison.iter_discovery_media_pages", fake_media_pages)
+    monkeypatch.setattr(
+        "sync.comparison._has_follower_measurement_on_day",
+        lambda *_a, **_k: False,
+    )
+
+    result = run_comparison_sync(
+        trigger_source="schedule_morning_growth",
+        include_own=False,
+        mode="growth",
+    )
+    assert result.status in {"completed", "completed_with_errors"}
+    assert profile_calls
+    assert media_calls == []
+    with get_connection() as conn:
+        assert find_active_fetch_run(conn) is None
+        stored = conn.execute(
+            "SELECT COUNT(*) AS n FROM account_measurements"
+        ).fetchone()["n"]
+        assert stored >= 1

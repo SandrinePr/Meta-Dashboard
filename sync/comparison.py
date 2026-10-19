@@ -202,6 +202,7 @@ def _fetch_own_account(
     measured_at: str,
     period_start: datetime,
     period_end: datetime,
+    include_media: bool = True,
 ) -> AccountFetchSummary:
     summary = AccountFetchSummary(
         username=host.username or DEFAULT_FALLBACK_USERNAME,
@@ -233,6 +234,26 @@ def _fetch_own_account(
             followers_count=summary.followers_count,
             media_count=summary.media_count,
         )
+
+        if not include_media:
+            summary.status = "success"
+            summary.is_complete = True
+            upsert_account_result(
+                conn,
+                fetch_run_id=fetch_run_id,
+                account_id=account_id,
+                status="success",
+                posts_fetched=0,
+                period_start=summary.period_start,
+                period_end=summary.period_end,
+                is_complete=True,
+            )
+            logger.info(
+                "Profielmeting eigen account @%s opgeslagen (followers=%s).",
+                summary.username,
+                summary.followers_count,
+            )
+            return summary
 
         since_ts = int(period_start.timestamp())
         media_items = client.get_instagram_media(
@@ -967,13 +988,19 @@ def run_comparison_sync(
     force: bool = False,
     only_usernames: list[str] | None = None,
     include_own: bool = True,
+    mode: str = "full",
 ) -> ComparisonSyncResult:
     """Refresh own account + persisted competitors for the last 3 calendar months.
 
     API calls happen only in this explicit run. Screen rendering must use SQLite.
+    ``mode='growth'`` stores follower/profile snapshots only.
+    ``mode='full'`` also refreshes post/engagement data.
     """
     initialize_database()
     result = ComparisonSyncResult()
+    mode_normalized = (mode or "full").strip().lower()
+    if mode_normalized not in {"growth", "full"}:
+        mode_normalized = "full"
     period_start, period_end = three_calendar_months_window()
     measured_at = utc_now_iso()
     result.measured_at = measured_at
@@ -1062,6 +1089,7 @@ def run_comparison_sync(
             only_usernames=only_usernames,
             include_own=include_own,
             progress=progress,
+            mode=mode_normalized,
         )
     except Exception as exc:  # noqa: BLE001 — never leave status=running
         logger.exception("Vergelijkingssync afgebroken (run_id=%s)", run_id)
@@ -1093,6 +1121,7 @@ def _execute_comparison_sync(
     only_usernames: list[str] | None,
     include_own: bool,
     progress: ProgressCallback | None,
+    mode: str = "full",
 ) -> ComparisonSyncResult:
     """Inner sync body (profile-first, then media). Caller owns run lifecycle."""
     if only_usernames:
@@ -1120,9 +1149,12 @@ def _execute_comparison_sync(
                 account_id=own_account.account_id,
                 status="success",
             )
-            if already_in_run or _has_follower_measurement_on_day(
+            already_today = _has_follower_measurement_on_day(
                 conn, own_account.account_id
-            ):
+            )
+            # Full runs still need own post/engagement data even if growth
+            # already stored today's follower snapshot.
+            if already_in_run or (mode == "growth" and already_today):
                 include_own_flag = False
                 _emit(
                     progress,
@@ -1171,6 +1203,7 @@ def _execute_comparison_sync(
 
     total = max(len(ordered), 1)
     summaries: list[AccountFetchSummary] = []
+    profile_summaries: list[AccountFetchSummary] = []
     discovery_blocked = False
 
     # Phase 1: profile-only follower snapshots for competitors still missing today.
@@ -1205,6 +1238,7 @@ def _execute_comparison_sync(
                 fetch_run_id=run_id,
                 measured_at=measured_at,
             )
+            profile_summaries.append(profile_summary)
             if profile_summary.rate_limited:
                 discovery_blocked = True
                 result.rate_limited = True
@@ -1231,48 +1265,17 @@ def _execute_comparison_sync(
                 )
             conn.commit()
 
-    # Phase 2: media / engagement, one account at a time (priority order).
-    for index, (role, username) in enumerate(ordered):
-        fraction = 0.15 + (index / total) * 0.85
-        if discovery_blocked and role == "competitor":
-            summary = AccountFetchSummary(
-                username=username,
-                status="skipped",
-                error_message=RATE_LIMIT_USER_MESSAGE,
-            )
-            summaries.append(summary)
-            continue
-
-        if index > 0 and not discovery_blocked:
-            # Mild pacing only between successful schedule slots; no retry loops.
-            time_module.sleep(3)
-
-        _emit(progress, f"Ophalen posts @{username}…", fraction)
-        with get_connection() as conn:
-            host = get_discovery_host(conn)
-            if host is None:
-                summary = AccountFetchSummary(
-                    username=username,
-                    status="failed",
-                    error_message="Discovery-host ontbreekt.",
-                )
-            elif role == "own":
-                if account_result_exists(
-                    conn,
-                    fetch_run_id=run_id,
-                    account_id=host.account_id
-                    if own_account is None
-                    else own_account.account_id,
-                    status="success",
-                ):
-                    summary = AccountFetchSummary(
-                        username=username,
-                        account_id=own_account.account_id if own_account else None,
-                        status="skipped",
-                        error_message="Eigen account al geslaagd in deze run.",
-                    )
+    if mode == "growth":
+        if include_own_flag and not discovery_blocked:
+            _emit(progress, "Profielmeting eigen account…", 0.2)
+            with get_connection() as conn:
+                host = get_discovery_host(conn)
+                if host is None:
+                    result.status = "failed"
+                    result.error_message = "Discovery-host ontbreekt."
+                    conn.commit()
                 else:
-                    summary = _fetch_own_account(
+                    own_summary = _fetch_own_account(
                         client,
                         conn,
                         host=host,
@@ -1280,54 +1283,115 @@ def _execute_comparison_sync(
                         measured_at=measured_at,
                         period_start=period_start,
                         period_end=period_end,
+                        include_media=False,
                     )
-            else:
-                summary = _fetch_competitor(
-                    client,
-                    conn,
-                    host=host,
+                    summaries.append(own_summary)
+                    if own_summary.rate_limited:
+                        discovery_blocked = True
+                        result.rate_limited = True
+                        result.rate_limit_blocked_until = own_summary.blocked_until
+                        result.error_message = RATE_LIMIT_USER_MESSAGE
+                    conn.commit()
+        summaries.extend(profile_summaries)
+        # Skip media/engagement; follower snapshots are the morning job.
+    if mode != "growth":
+        # Phase 2: media / engagement, one account at a time (priority order).
+        for index, (role, username) in enumerate(ordered):
+            fraction = 0.15 + (index / total) * 0.85
+            if discovery_blocked and role == "competitor":
+                summary = AccountFetchSummary(
                     username=username,
-                    fetch_run_id=run_id,
-                    measured_at=measured_at,
-                    period_start=period_start,
-                    period_end=period_end,
+                    status="skipped",
+                    error_message=RATE_LIMIT_USER_MESSAGE,
                 )
+                summaries.append(summary)
+                continue
 
-            if summary.rate_limited or (
-                summary.status == "failed"
-                and summary.error_message
-                and (
-                    summary.error_message == RATE_LIMIT_USER_MESSAGE
-                    or is_rate_limit_error(message=summary.error_message)
-                )
-            ):
-                discovery_blocked = True
-                result.rate_limited = True
-                result.rate_limit_blocked_until = summary.blocked_until
-                result.error_message = RATE_LIMIT_USER_MESSAGE
-                result.last_success_measured_at = (
-                    get_latest_success_measured_at(conn)
-                    or result.last_success_measured_at
-                )
-                summary.error_message = RATE_LIMIT_USER_MESSAGE
-                state = get_discovery_rate_limit(conn)
-                if state is not None:
-                    result.rate_limit_blocked_until = (
-                        state.blocked_until or result.rate_limit_blocked_until
+            if index > 0 and not discovery_blocked:
+                # Mild pacing only between successful schedule slots; no retry loops.
+                time_module.sleep(3)
+
+            _emit(progress, f"Ophalen posts @{username}…", fraction)
+            with get_connection() as conn:
+                host = get_discovery_host(conn)
+                if host is None:
+                    summary = AccountFetchSummary(
+                        username=username,
+                        status="failed",
+                        error_message="Discovery-host ontbreekt.",
                     )
-                _emit(progress, RATE_LIMIT_USER_MESSAGE, fraction)
-            elif (
-                summary.status == "success"
-                and summary.is_complete
-                and role == "competitor"
-            ):
-                clear_discovery_rate_limit(conn)
+                elif role == "own":
+                    if account_result_exists(
+                        conn,
+                        fetch_run_id=run_id,
+                        account_id=host.account_id
+                        if own_account is None
+                        else own_account.account_id,
+                        status="success",
+                    ):
+                        summary = AccountFetchSummary(
+                            username=username,
+                            account_id=own_account.account_id if own_account else None,
+                            status="skipped",
+                            error_message="Eigen account al geslaagd in deze run.",
+                        )
+                    else:
+                        summary = _fetch_own_account(
+                            client,
+                            conn,
+                            host=host,
+                            fetch_run_id=run_id,
+                            measured_at=measured_at,
+                            period_start=period_start,
+                            period_end=period_end,
+                        )
+                else:
+                    summary = _fetch_competitor(
+                        client,
+                        conn,
+                        host=host,
+                        username=username,
+                        fetch_run_id=run_id,
+                        measured_at=measured_at,
+                        period_start=period_start,
+                        period_end=period_end,
+                    )
 
-            conn.commit()
-        summaries.append(summary)
+                if summary.rate_limited or (
+                    summary.status == "failed"
+                    and summary.error_message
+                    and (
+                        summary.error_message == RATE_LIMIT_USER_MESSAGE
+                        or is_rate_limit_error(message=summary.error_message)
+                    )
+                ):
+                    discovery_blocked = True
+                    result.rate_limited = True
+                    result.rate_limit_blocked_until = summary.blocked_until
+                    result.error_message = RATE_LIMIT_USER_MESSAGE
+                    result.last_success_measured_at = (
+                        get_latest_success_measured_at(conn)
+                        or result.last_success_measured_at
+                    )
+                    summary.error_message = RATE_LIMIT_USER_MESSAGE
+                    state = get_discovery_rate_limit(conn)
+                    if state is not None:
+                        result.rate_limit_blocked_until = (
+                            state.blocked_until or result.rate_limit_blocked_until
+                        )
+                    _emit(progress, RATE_LIMIT_USER_MESSAGE, fraction)
+                elif (
+                    summary.status == "success"
+                    and summary.is_complete
+                    and role == "competitor"
+                ):
+                    clear_discovery_rate_limit(conn)
 
-        if discovery_blocked:
-            break
+                conn.commit()
+            summaries.append(summary)
+
+            if discovery_blocked:
+                break
 
     # Mark remaining competitors as skipped without API calls.
     if discovery_blocked:
@@ -1347,7 +1411,8 @@ def _execute_comparison_sync(
     partials = [item for item in summaries if item.status == "partial"]
     skipped = [item for item in summaries if item.status == "skipped"]
     if not summaries:
-        status = "failed"
+        # Growth with every profile already measured today is a successful no-op.
+        status = "completed" if mode == "growth" else "failed"
     elif result.rate_limited and (failures or partials):
         status = "completed_with_errors"
     elif failures and len(failures) == len(summaries):
