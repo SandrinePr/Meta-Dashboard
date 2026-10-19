@@ -234,7 +234,7 @@ Na een Meta-fout `#4` (aanvraaglimiet) stopt discovery meteen, zonder retry-luss
 | Omgeving | Wat draait | Database |
 | --- | --- | --- |
 | **Lokaal (huidige werkcopy)** | Streamlit via `app.py` / venv | `DATABASE_PATH=data/social_search.db` (SQLite op schijf) |
-| **Render (repo-config)** | Web: `streamlit run app.py …` (`render.yaml`, plan `free`) | Ephemeral SQLite via `DATABASE_PATH=data/social_search.db`; geen persistent disk |
+| **Render (repo-config)** | Web: `python run_web.py` + cron wake (`render.yaml`) | Ephemeral SQLite via `DATABASE_PATH=data/social_search.db`; scheduler in het webproces (zelfde DB) |
 
 Runtime-DB en back-ups staan in `.gitignore` (`data/*.db`, `data/backups/`). Alleen `seed_social_search.db` / media-seed gaan mee in Git.
 
@@ -249,7 +249,7 @@ python scripts/merge_comparison_history.py `
 
 Het script maakt eerst back-ups, behoudt bestaande target-metingen, en voegt alleen ontbrekende **rechtstreeks opgeslagen** metingen toe op basis van `(platform, external_id, measured_at)`. Logtijden gelden niet als meettijd.
 
-Er is **geen** aparte scheduler-service in de repo. Stel **geen** aparte worker in met een eigen DB-kopie: webapp en dagelijkse job moeten dezelfde database gebruiken.
+Dagelijkse jobs draaien **in het webproces** (zelfde SQLite): 07:30 growth, 13:30 social vergelijking, 20:30 volledige refresh (Europe/Amsterdam). De Render cron `dashboard-wake` houdt de web service wakker; zet `DASHBOARD_URL` naar de live URL. Stel **geen** aparte worker in met een eigen DB-kopie.
 
 ### Dagelijkse run (lokaal gepland — nog niet bewezen)
 

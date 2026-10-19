@@ -7,6 +7,7 @@ import logging
 import os
 import re
 from datetime import date, datetime
+from pathlib import Path
 from typing import Iterable
 
 import streamlit as st
@@ -39,6 +40,7 @@ from ui.media import (
     get_image_for_search_result,
     get_local_image_path_for_result,
     is_result_unavailable,
+    prefetch_thumbnails_for_post_ids,
 )
 from ui import styles as styles_mod
 
@@ -662,8 +664,14 @@ def render_result_card(
         )
         thumb_col, body_col, action_col = st.columns([1.05, 4.2, 1.35], gap="small")
         with thumb_col:
+            thumb_bytes = None
             if display_image is not None:
-                st.image(str(display_image), use_container_width=True)
+                try:
+                    thumb_bytes = Path(display_image).read_bytes()
+                except OSError:
+                    thumb_bytes = None
+            if thumb_bytes:
+                st.image(thumb_bytes, use_container_width=True)
             else:
                 st.markdown(
                     '<div class="rro-thumb-placeholder">Geen thumbnail</div>',
@@ -784,6 +792,15 @@ def render_results_section(
 def render_results(results: list[SearchResult], query: str | None = None) -> None:
     """Render results, grouping comments under their parent post when present."""
     query = query or ""
+    prefetch_ids: list[int] = []
+    for result in results:
+        if result.entity_type == "post":
+            prefetch_ids.append(int(result.entity_id))
+        else:
+            parent_id = get_comment_parent_post_id(result.entity_id)
+            if parent_id is not None:
+                prefetch_ids.append(int(parent_id))
+    prefetch_thumbnails_for_post_ids(prefetch_ids)
     post_by_id = {
         result.entity_id: result
         for result in results

@@ -4,7 +4,22 @@ services:
     runtime: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: streamlit run app.py --server.port=$PORT --server.address=0.0.0.0 --server.headless=true
+    startCommand: python run_web.py
     envVars:
       - key: PYTHON_VERSION
         value: "3.11.9"
+      - key: ENABLE_SCHEDULER
+        value: "1"
+
+  - type: cron
+    name: dashboard-wake
+    runtime: python
+    plan: free
+    schedule: "0 5-19 * * *"
+    buildCommand: pip install -r requirements.txt
+    startCommand: python scripts/wake_dashboard.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+      - key: DASHBOARD_URL
+        value: https://meta-dashboard.onrender.com

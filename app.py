@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 
 import streamlit as st
 from dotenv import load_dotenv
@@ -46,6 +47,9 @@ def main() -> None:
     inject_styles()
     logging.basicConfig(level=logging.INFO)
 
+    from sync.scheduler import start_scheduler
+
+    start_scheduler()
     initialize_database()
     totals = get_sync_summary()
 
@@ -112,6 +116,19 @@ def main() -> None:
                     stats.insights_failed,
                     len(stats.errors),
                 )
+                def _cache_new_thumbs() -> None:
+                    try:
+                        from sync.thumbnails import cache_missing_thumbnails
+
+                        cache_missing_thumbnails(recent_first=True, limit=80)
+                    except Exception:
+                        logger.exception("Post-sync thumbnail cache failed")
+
+                threading.Thread(
+                    target=_cache_new_thumbs,
+                    name="cache-thumbs",
+                    daemon=True,
+                ).start()
             except Exception as exc:
                 st.session_state.last_sync_stats = None
                 status.update(label="Synchronisatie mislukt", state="error")

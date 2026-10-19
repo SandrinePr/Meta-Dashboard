@@ -169,6 +169,22 @@ def resolve_display_image_url(
     return None, "none"
 
 
+def prefetch_thumbnails_for_post_ids(post_ids: list[int]) -> None:
+    """Download missing thumbnails for the visible cards before render."""
+    ids = [int(post_id) for post_id in post_ids if post_id]
+    if not ids:
+        return
+    try:
+        from sync.thumbnails import ensure_posts_thumbnails
+    except Exception:
+        logger.exception("Thumbnail helper unavailable")
+        return
+    try:
+        ensure_posts_thumbnails(ids, max_workers=4)
+    except Exception:
+        logger.exception("Prefetch thumbnails failed")
+
+
 def get_local_image_path_for_result(result) -> Path | None:
     """Return the local thumbnail path for a search result, if cached."""
     with get_connection() as conn:
@@ -215,20 +231,49 @@ def _resolve_post_image_from_db(post_id: int) -> tuple[str | None, str]:
     return None, "no_image"
 
 
+def _ensure_local_thumbnail(post_id: int | None) -> Path | None:
+    """Return a cached file, downloading via Graph/CDN when the file is missing."""
+    if post_id is None:
+        return None
+    path = local_media_path(int(post_id))
+    if path is not None:
+        return path
+    try:
+        from sync.thumbnails import ensure_post_thumbnail
+    except Exception:
+        logger.exception("Thumbnail helper unavailable")
+        return None
+    try:
+        return ensure_post_thumbnail(int(post_id))
+    except Exception:
+        logger.exception("Live thumbnail cache failed for post %s", post_id)
+        return None
+
+
 def get_image_for_search_result(result) -> tuple[str | None, str]:
     """Resolve the best image for a search/performance result card.
 
     Prefers a local cached file for ``st.image``. Meta CDN URLs are never
     returned: they expire and typically 403, especially from Render.
+    On a cache miss, refresh via Graph and store the file so live Render
+    can show the image after the first view.
     """
     path = get_local_image_path_for_result(result)
     if path is not None:
         return str(path), "local_cache"
+    post_id: int | None
+    if result.entity_type == "post":
+        post_id = int(result.entity_id)
+    else:
+        post_id = get_comment_parent_post_id(int(result.entity_id))
+    cached = _ensure_local_thumbnail(post_id)
+    if cached is not None:
+        return str(cached), "local_cache"
     return None, "no_local_cache"
 
 
 def get_image_for_entity(entity_type: str, entity_id: int) -> tuple[str | None, str]:
-    """Load image path for a search result entity from local cache only."""
+    """Load image path for a search result entity from local cache (Graph on miss)."""
     with get_connection() as conn:
         if entity_type == "post":
             post_id = entity_id
@@ -244,6 +289,9 @@ def get_image_for_entity(entity_type: str, entity_id: int) -> tuple[str | None, 
     path = local_media_path(post_id)
     if path is not None:
         return str(path), "local_cache"
+    cached = _ensure_local_thumbnail(post_id)
+    if cached is not None:
+        return str(cached), "local_cache"
     return None, "no_local_cache"
 
 
