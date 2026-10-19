@@ -662,7 +662,7 @@ def render_result_card(
             '<div class="rro-result-card-marker" aria-hidden="true"></div>',
             unsafe_allow_html=True,
         )
-        thumb_col, body_col, action_col = st.columns([1.05, 4.2, 1.35], gap="small")
+        thumb_col, body_col, action_col = st.columns([1.45, 4.0, 1.25], gap="small")
         with thumb_col:
             if thumb_uri:
                 # Embed JPEG bytes in the page. Do not use st.image: Render cannot
@@ -670,10 +670,10 @@ def render_result_card(
                 st.html(
                     '<img class="rro-thumb" alt="" '
                     f'src="{thumb_uri}" '
-                    'style="width:88px;height:88px;object-fit:cover;'
+                    'style="width:100%;aspect-ratio:1/1;object-fit:cover;'
                     "border-radius:8px;border:1px solid rgba(242,240,236,0.12);"
                     'display:block;background:#4B5560;" />',
-                    width="content",
+                    width="stretch",
                 )
             else:
                 st.markdown(

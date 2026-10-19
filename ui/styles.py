@@ -1090,26 +1090,42 @@ div.rro-results-totals,
 [data-testid="stVerticalBlockBorderWrapper"]:has(.rro-result-card-marker)
     [data-testid="stImage"],
 [data-testid="stVerticalBlockBorderWrapper"]:has(.rro-result-card-marker)
-    [data-testid="stImageContainer"] {
+    [data-testid="stImageContainer"],
+[data-testid="stVerticalBlockBorderWrapper"]:has(.rro-result-card-marker)
+    [data-testid="stHtml"] {
     margin: 0 !important;
+    min-height: 0 !important;
+}
+
+[data-testid="stVerticalBlockBorderWrapper"]:has(.rro-result-card-marker)
+    [data-testid="stElementContainer"]:has([data-testid="stHtml"]) {
+    margin: 0 !important;
+    padding: 0 !important;
+    min-height: 0 !important;
 }
 
 [data-testid="stVerticalBlockBorderWrapper"]:has(.rro-result-card-marker)
     [data-testid="stImage"] img,
 [data-testid="stVerticalBlockBorderWrapper"]:has(.rro-result-card-marker)
-    [data-testid="stImageContainer"] img {
-    width: 88px !important;
-    height: 88px !important;
-    max-width: 88px !important;
+    [data-testid="stImageContainer"] img,
+[data-testid="stVerticalBlockBorderWrapper"]:has(.rro-result-card-marker)
+    [data-testid="stHtml"] img,
+[data-testid="stVerticalBlockBorderWrapper"]:has(.rro-result-card-marker)
+    .rro-thumb {
+    width: 100% !important;
+    height: auto !important;
+    max-width: none !important;
+    aspect-ratio: 1 / 1 !important;
     object-fit: cover !important;
     border-radius: var(--rro-radius-sm) !important;
     border: 1px solid var(--rro-border) !important;
     background: var(--rro-input);
+    display: block !important;
 }
 
 .rro-result-card {
     display: grid;
-    grid-template-columns: 88px 1fr 120px;
+    grid-template-columns: 160px 1fr 120px;
     gap: 12px;
     align-items: start;
     background: var(--rro-card);
@@ -1128,13 +1144,15 @@ div.rro-results-totals,
 }
 
 .rro-thumb {
-    width: 88px;
-    height: 88px;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    height: auto;
     border-radius: var(--rro-radius-sm);
     object-fit: cover;
     border: 1px solid var(--rro-border);
     background: var(--rro-input);
     transition: border-color 0.15s ease;
+    display: block;
 }
 
 .rro-result-card:hover .rro-thumb,
@@ -1143,8 +1161,8 @@ div.rro-results-totals,
 }
 
 .rro-thumb-placeholder {
-    width: 88px;
-    height: 88px;
+    width: 100%;
+    aspect-ratio: 1 / 1;
     border-radius: var(--rro-radius-sm);
     border: 1px dashed var(--rro-border);
     background: var(--rro-input);
@@ -1443,14 +1461,15 @@ a.rro-btn-link:focus-visible {
 
 @media (max-width: 700px) {
     .rro-result-card {
-        grid-template-columns: 72px 1fr;
+        grid-template-columns: 96px 1fr;
     }
     .rro-result-card > div:last-child {
         grid-column: 1 / -1;
     }
     .rro-thumb, .rro-thumb-placeholder {
-        width: 72px;
-        height: 72px;
+        width: 100%;
+        height: auto;
+        aspect-ratio: 1 / 1;
     }
     .rro-page-title,
     h1 {
