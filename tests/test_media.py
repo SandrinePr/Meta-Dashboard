@@ -179,6 +179,20 @@ def test_rejects_example_and_facebook_page_urls() -> None:
     assert source == "none"
 
 
+def test_local_media_data_uri_reads_jpeg(tmp_path, monkeypatch) -> None:
+    from ui.media import local_media_data_uri
+
+    monkeypatch.setattr("ui.media.MEDIA_DIR", tmp_path)
+    image = tmp_path / "post_9.jpg"
+    image.write_bytes(
+        b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00"
+        b"\xff\xd9"
+    )
+    uri = local_media_data_uri(9)
+    assert uri is not None
+    assert uri.startswith("data:image/jpeg;base64,")
+
+
 def test_facebook_prefers_thumbnail_over_media() -> None:
     url, source = resolve_display_image_url(
         thumbnail_url="https://scontent.xx.fbcdn.net/v/t1/thumb.jpg",
