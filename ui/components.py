@@ -664,14 +664,9 @@ def render_result_card(
         )
         thumb_col, body_col, action_col = st.columns([1.05, 4.2, 1.35], gap="small")
         with thumb_col:
-            thumb_bytes = None
-            if display_image is not None:
-                try:
-                    thumb_bytes = Path(display_image).read_bytes()
-                except OSError:
-                    thumb_bytes = None
-            if thumb_bytes:
-                st.image(thumb_bytes, use_container_width=True)
+            thumb_path = Path(display_image) if display_image is not None else None
+            if thumb_path is not None and thumb_path.is_file():
+                st.image(str(thumb_path.resolve()), use_container_width=True)
             else:
                 st.markdown(
                     '<div class="rro-thumb-placeholder">Geen thumbnail</div>',
