@@ -1088,12 +1088,16 @@ div.rro-results-totals,
 }
 
 [data-testid="stVerticalBlockBorderWrapper"]:has(.rro-result-card-marker)
-    [data-testid="stImage"] {
+    [data-testid="stImage"],
+[data-testid="stVerticalBlockBorderWrapper"]:has(.rro-result-card-marker)
+    [data-testid="stImageContainer"] {
     margin: 0 !important;
 }
 
 [data-testid="stVerticalBlockBorderWrapper"]:has(.rro-result-card-marker)
-    [data-testid="stImage"] img {
+    [data-testid="stImage"] img,
+[data-testid="stVerticalBlockBorderWrapper"]:has(.rro-result-card-marker)
+    [data-testid="stImageContainer"] img {
     width: 88px !important;
     height: 88px !important;
     max-width: 88px !important;
