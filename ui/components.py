@@ -9,7 +9,6 @@ import re
 from datetime import date, datetime
 from typing import Iterable
 
-from PIL import Image
 import streamlit as st
 
 from search.engine import (
@@ -39,6 +38,7 @@ from ui.media import (
     get_engagement_stats,
     get_local_image_path_for_result,
     is_result_unavailable,
+    local_media_data_uri,
 )
 from ui import styles as styles_mod
 
@@ -603,12 +603,18 @@ def render_result_card(
     safe_date = html.escape(_format_date(result.published_at))
     unavailable = is_result_unavailable(result)
 
+    if result.entity_type == "post":
+        thumb_post_id: int | None = int(result.entity_id)
+    else:
+        thumb_post_id = get_comment_parent_post_id(int(result.entity_id))
     image_path = get_local_image_path_for_result(result)
+    thumb_uri = local_media_data_uri(thumb_post_id) if thumb_post_id else None
     logger.debug(
-        "Result image entity=%s/%s path=%s",
+        "Result image entity=%s/%s path=%s uri=%s",
         result.entity_type,
         result.entity_id,
         image_path,
+        bool(thumb_uri),
     )
 
     if unavailable:
@@ -658,16 +664,18 @@ def render_result_card(
         )
         thumb_col, body_col, action_col = st.columns([1.05, 4.2, 1.35], gap="small")
         with thumb_col:
-            shown = False
-            if image_path is not None:
-                try:
-                    with Image.open(image_path) as img:
-                        frame = img.convert("RGB")
-                    st.image(frame, width=88)
-                    shown = True
-                except Exception:
-                    logger.exception("Thumbnail render failed for %s", image_path)
-            if not shown:
+            if thumb_uri:
+                # Embed JPEG bytes in the page. Do not use st.image: Render cannot
+                # load Streamlit's /_stcore/media URLs or Instagram CDN links.
+                st.html(
+                    '<img class="rro-thumb" alt="" '
+                    f'src="{thumb_uri}" '
+                    'style="width:88px;height:88px;object-fit:cover;'
+                    "border-radius:8px;border:1px solid rgba(242,240,236,0.12);"
+                    'display:block;background:#4B5560;" />',
+                    width="content",
+                )
+            else:
                 st.markdown(
                     '<div class="rro-thumb-placeholder">Geen thumbnail</div>',
                     unsafe_allow_html=True,

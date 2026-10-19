@@ -44,6 +44,8 @@ def main() -> int:
         "0.0.0.0",
         "--server.headless",
         "true",
+        "--server.enableStaticServing",
+        "true",
     ]
     return subprocess.call(cmd, env=env)
 
