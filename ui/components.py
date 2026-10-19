@@ -7,9 +7,9 @@ import logging
 import os
 import re
 from datetime import date, datetime
-from pathlib import Path
 from typing import Iterable
 
+from PIL import Image
 import streamlit as st
 
 from search.engine import (
@@ -37,10 +37,8 @@ from ui.media import (
     get_comment_parent_post_id,
     get_content_type_for_result,
     get_engagement_stats,
-    get_image_for_search_result,
     get_local_image_path_for_result,
     is_result_unavailable,
-    prefetch_thumbnails_for_post_ids,
 )
 from ui import styles as styles_mod
 
@@ -605,16 +603,12 @@ def render_result_card(
     safe_date = html.escape(_format_date(result.published_at))
     unavailable = is_result_unavailable(result)
 
-    image_url, image_source = get_image_for_search_result(result)
     image_path = get_local_image_path_for_result(result)
-    # Local files only. Meta CDN URLs expire and 403 on Render.
-    display_image = image_path
     logger.debug(
-        "Result image entity=%s/%s display=%s source=%s",
+        "Result image entity=%s/%s path=%s",
         result.entity_type,
         result.entity_id,
-        display_image,
-        image_source,
+        image_path,
     )
 
     if unavailable:
@@ -664,10 +658,16 @@ def render_result_card(
         )
         thumb_col, body_col, action_col = st.columns([1.05, 4.2, 1.35], gap="small")
         with thumb_col:
-            thumb_path = Path(display_image) if display_image is not None else None
-            if thumb_path is not None and thumb_path.is_file():
-                st.image(str(thumb_path.resolve()), use_container_width=True)
-            else:
+            shown = False
+            if image_path is not None:
+                try:
+                    with Image.open(image_path) as img:
+                        frame = img.convert("RGB")
+                    st.image(frame, width=88)
+                    shown = True
+                except Exception:
+                    logger.exception("Thumbnail render failed for %s", image_path)
+            if not shown:
                 st.markdown(
                     '<div class="rro-thumb-placeholder">Geen thumbnail</div>',
                     unsafe_allow_html=True,
@@ -787,15 +787,6 @@ def render_results_section(
 def render_results(results: list[SearchResult], query: str | None = None) -> None:
     """Render results, grouping comments under their parent post when present."""
     query = query or ""
-    prefetch_ids: list[int] = []
-    for result in results:
-        if result.entity_type == "post":
-            prefetch_ids.append(int(result.entity_id))
-        else:
-            parent_id = get_comment_parent_post_id(result.entity_id)
-            if parent_id is not None:
-                prefetch_ids.append(int(parent_id))
-    prefetch_thumbnails_for_post_ids(prefetch_ids)
     post_by_id = {
         result.entity_id: result
         for result in results

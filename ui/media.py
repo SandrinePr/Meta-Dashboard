@@ -253,22 +253,12 @@ def _ensure_local_thumbnail(post_id: int | None) -> Path | None:
 def get_image_for_search_result(result) -> tuple[str | None, str]:
     """Resolve the best image for a search/performance result card.
 
-    Prefers a local cached file for ``st.image``. Meta CDN URLs are never
-    returned: they expire and typically 403, especially from Render.
-    On a cache miss, refresh via Graph and store the file so live Render
-    can show the image after the first view.
+    Local cached JPEGs only. Meta CDN URLs expire and 403 from Render, so they
+    are never passed to ``st.image``.
     """
     path = get_local_image_path_for_result(result)
     if path is not None:
         return str(path), "local_cache"
-    post_id: int | None
-    if result.entity_type == "post":
-        post_id = int(result.entity_id)
-    else:
-        post_id = get_comment_parent_post_id(int(result.entity_id))
-    cached = _ensure_local_thumbnail(post_id)
-    if cached is not None:
-        return str(cached), "local_cache"
     return None, "no_local_cache"
 
 
@@ -289,9 +279,6 @@ def get_image_for_entity(entity_type: str, entity_id: int) -> tuple[str | None, 
     path = local_media_path(post_id)
     if path is not None:
         return str(path), "local_cache"
-    cached = _ensure_local_thumbnail(post_id)
-    if cached is not None:
-        return str(cached), "local_cache"
     return None, "no_local_cache"
 
 
