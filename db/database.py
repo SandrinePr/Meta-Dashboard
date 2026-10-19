@@ -77,7 +77,7 @@ def ensure_media_cache(*, force: bool = False) -> bool:
             default=0.0,
         )
     )
-    count_mismatch = existing > 0 and zip_count > 0 and existing < zip_count
+    count_mismatch = zip_count > 0 and existing != zip_count
     if existing and not force and not zip_newer and not count_mismatch:
         return False
 
@@ -170,11 +170,8 @@ def ensure_seed_database(db_path: Path | None = None) -> bool:
         seed_content_changed = seed_posts > runtime_posts
     bundled_version = _read_seed_version(SEED_VERSION_PATH)
     runtime_version = _read_seed_version(_runtime_seed_version_path(effective_db_path))
-    seed_version_changed = (
-        bool(bundled_version)
-        and bundled_version != runtime_version
-        and not protect_comparison
-    )
+    version_mismatch = bool(bundled_version) and bundled_version != runtime_version
+    seed_version_changed = version_mismatch and not protect_comparison
     if runtime_empty or seed_newer or seed_content_changed or seed_version_changed:
         reason = (
             "empty"
@@ -199,8 +196,14 @@ def ensure_seed_database(db_path: Path | None = None) -> bool:
         )
         seeded = True
 
-    # Always refresh media when the DB seed was replaced so Render gets new images.
-    ensure_media_cache(force=seeded)
+    # Refresh media when the DB was replaced, or when a newer seed zip shipped
+    # while comparison data blocked replacing the runtime SQLite file.
+    ensure_media_cache(force=seeded or version_mismatch)
+    if version_mismatch and bundled_version and not seeded:
+        _runtime_seed_version_path(effective_db_path).write_text(
+            bundled_version,
+            encoding="utf-8",
+        )
     return seeded
 
 

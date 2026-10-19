@@ -21,7 +21,6 @@ from config import get_settings
 from search.engine import SearchResult
 from sync.engagement_refresh import refresh_month_insights
 from ui.components import render_result_card
-from ui.media import prefetch_thumbnails_for_post_ids
 
 
 def _format_count(value: int) -> str:
@@ -96,7 +95,6 @@ def render_performance_metric_section(metric: str, posts: list[TopPost]) -> None
         )
         return
 
-    prefetch_thumbnails_for_post_ids([int(post.post_id) for post in posts])
     for rank, post in enumerate(posts, start=1):
         render_result_card(
             _top_post_as_result(post),
