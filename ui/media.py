@@ -6,6 +6,7 @@ import base64
 import json
 import logging
 import mimetypes
+import threading
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -72,6 +73,47 @@ def local_media_path(post_id: int) -> Path | None:
         if path.exists() and path.stat().st_size > 0:
             return path
     return None
+
+
+def choose_card_image(local_uri: str | None, remote_url: str | None) -> str | None:
+    """Prefer a cached file. Otherwise use a CDN URL with any token removed."""
+    if local_uri:
+        return local_uri
+    from meta.redact import redact_text
+
+    cleaned = redact_text(remote_url)
+    if _is_displayable_image_url(cleaned):
+        return cleaned
+    return None
+
+
+def image_src_for_post(post_id: int) -> tuple[str | None, str]:
+    """Return the image src for a card, and a short source label."""
+    uri = local_media_data_uri(post_id)
+    if uri:
+        return uri, "local_file"
+    with get_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT thumbnail_url, media_url, media_type, raw_json
+            FROM posts
+            WHERE id = ?
+            """,
+            (int(post_id),),
+        ).fetchone()
+    if not row:
+        return None, "none"
+    url, source = resolve_display_image_url(
+        thumbnail_url=row["thumbnail_url"],
+        media_url=row["media_url"],
+        media_type=row["media_type"],
+        raw_json=row["raw_json"],
+        prefer_thumbnail=True,
+    )
+    chosen = choose_card_image(None, url)
+    if not chosen:
+        return None, "none"
+    return chosen, source
 
 
 def local_media_data_uri(post_id: int) -> str | None:
@@ -169,8 +211,20 @@ def resolve_display_image_url(
     return None, "none"
 
 
+def prefetch_thumbnails_in_background(post_ids: list[int]) -> None:
+    """Cache missing thumbnails without delaying the page render."""
+    ids = [int(post_id) for post_id in post_ids if post_id]
+    if not ids:
+        return
+    threading.Thread(
+        target=prefetch_thumbnails_for_post_ids,
+        args=(ids,),
+        daemon=True,
+    ).start()
+
+
 def prefetch_thumbnails_for_post_ids(post_ids: list[int]) -> None:
-    """Download missing thumbnails for the visible cards before render."""
+    """Download missing thumbnails for the visible cards."""
     ids = [int(post_id) for post_id in post_ids if post_id]
     if not ids:
         return

@@ -100,3 +100,12 @@ CREATE INDEX IF NOT EXISTS idx_posts_published ON posts(published_at DESC);
 CREATE INDEX IF NOT EXISTS idx_comments_post ON comments(post_id);
 CREATE INDEX IF NOT EXISTS idx_comments_published ON comments(published_at DESC);
 CREATE INDEX IF NOT EXISTS idx_hashtags_tag ON hashtags(tag);
+
+-- Compressed JPEG bytes so a database snapshot can restore thumbnails
+-- after the Render disk is wiped. No URLs and no tokens are stored here.
+CREATE TABLE IF NOT EXISTS post_thumbnails (
+    post_id INTEGER PRIMARY KEY,
+    jpeg BLOB NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY(post_id) REFERENCES posts(id)
+);

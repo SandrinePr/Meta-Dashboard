@@ -227,3 +227,6 @@ def initialize_database(db_path: Path | None = None, schema_path: Path | None = 
         conn.executescript(schema_sql)
         apply_comparison_schema(conn)
         conn.commit()
+    from db.thumb_store import materialize_thumbnails
+
+    materialize_thumbnails(MEDIA_DIR, effective_db_path)

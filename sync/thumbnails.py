@@ -22,6 +22,7 @@ from db.database import get_connection
 from db.repository import merge_post_raw_json
 from meta.client import MetaClient, MetaClientError
 from meta.endpoints import FACEBOOK_POST_FIELDS, INSTAGRAM_MEDIA_FIELDS, as_fields_param
+from meta.redact import redact_json_text, redact_text
 from sync.mappers import normalize_facebook_post, normalize_instagram_post
 from ui.media import MEDIA_DIR, _is_displayable_image_url, local_media_path, resolve_display_image_url
 
@@ -113,6 +114,7 @@ def download_image_bytes(url: str, *, session: requests.Session | None = None) -
     except requests.RequestException:
         return None
     if response.status_code != 200 or not response.content:
+        logger.info("Thumbnail download HTTP %s", response.status_code)
         return None
     content_type = (response.headers.get("Content-Type") or "").lower()
     if "image" not in content_type and not url.lower().split("?")[0].endswith(
@@ -158,9 +160,11 @@ def persist_refreshed_urls(
     media_url: str | None,
     fresh_payload: dict,
 ) -> None:
-    merged_raw = merge_post_raw_json(
-        existing_raw,
-        json.dumps(fresh_payload, ensure_ascii=False),
+    merged_raw = redact_json_text(
+        merge_post_raw_json(
+            existing_raw,
+            json.dumps(fresh_payload, ensure_ascii=False),
+        )
     )
     conn.execute(
         """
@@ -170,7 +174,7 @@ def persist_refreshed_urls(
             raw_json = COALESCE(?, raw_json)
         WHERE id = ?
         """,
-        (thumbnail_url, media_url, merged_raw, post_id),
+        (redact_text(thumbnail_url), redact_text(media_url), merged_raw, post_id),
     )
     conn.execute(
         """
@@ -178,7 +182,7 @@ def persist_refreshed_urls(
         SET thumbnail_url = COALESCE(?, thumbnail_url)
         WHERE entity_type = 'post' AND entity_id = ?
         """,
-        (thumbnail_url, post_id),
+        (redact_text(thumbnail_url), post_id),
     )
 
 
@@ -231,6 +235,12 @@ def _cache_row(row: sqlite3.Row, *, client: MetaClient | None) -> Path | None:
                     break
 
     if content and save_compressed_jpeg(content, target):
+        try:
+            from db.thumb_store import store_jpeg
+
+            store_jpeg(post_id, target.read_bytes())
+        except Exception:
+            logger.exception("Thumbnail bytes were not stored for post %s", post_id)
         _failed_until.pop(post_id, None)
         return target
     _failed_until[post_id] = time.monotonic() + FAIL_COOLDOWN_SECONDS

@@ -36,9 +36,9 @@ from ui.media import (
     get_comment_parent_post_id,
     get_content_type_for_result,
     get_engagement_stats,
-    get_local_image_path_for_result,
+    image_src_for_post,
     is_result_unavailable,
-    local_media_data_uri,
+    prefetch_thumbnails_in_background,
 )
 from ui import styles as styles_mod
 
@@ -607,14 +607,17 @@ def render_result_card(
         thumb_post_id: int | None = int(result.entity_id)
     else:
         thumb_post_id = get_comment_parent_post_id(int(result.entity_id))
-    image_path = get_local_image_path_for_result(result)
-    thumb_uri = local_media_data_uri(thumb_post_id) if thumb_post_id else None
+    image_src = ""
+    image_source = "none"
+    if thumb_post_id:
+        image_src, image_source = image_src_for_post(thumb_post_id)
+        image_src = image_src or ""
     logger.debug(
-        "Result image entity=%s/%s path=%s uri=%s",
+        "Result image entity=%s/%s source=%s has_src=%s",
         result.entity_type,
         result.entity_id,
-        image_path,
-        bool(thumb_uri),
+        image_source,
+        bool(image_src),
     )
 
     if unavailable:
@@ -664,12 +667,13 @@ def render_result_card(
         )
         thumb_col, body_col, action_col = st.columns([1.45, 4.0, 1.25], gap="small")
         with thumb_col:
-            if thumb_uri:
-                # Embed JPEG bytes in the page. Do not use st.image: Render cannot
-                # load Streamlit's /_stcore/media URLs or Instagram CDN links.
+            if image_src:
+                # A cached file is embedded. Without a file, the stored CDN URL is
+                # used by the browser. Token query parameters are already removed.
+                safe_src = html.escape(image_src, quote=True)
                 st.html(
                     '<img class="rro-thumb" alt="" '
-                    f'src="{thumb_uri}" '
+                    f'src="{safe_src}" '
                     'style="width:100%;aspect-ratio:1/1;object-fit:cover;'
                     "border-radius:8px;border:1px solid rgba(242,240,236,0.12);"
                     'display:block;background:#4B5560;" />',
@@ -795,6 +799,15 @@ def render_results_section(
 def render_results(results: list[SearchResult], query: str | None = None) -> None:
     """Render results, grouping comments under their parent post when present."""
     query = query or ""
+    thumb_ids: list[int] = []
+    for result in results:
+        if result.entity_type == "post":
+            thumb_ids.append(int(result.entity_id))
+        else:
+            parent_id = get_comment_parent_post_id(int(result.entity_id))
+            if parent_id is not None:
+                thumb_ids.append(parent_id)
+    prefetch_thumbnails_in_background(thumb_ids)
     post_by_id = {
         result.entity_id: result
         for result in results
