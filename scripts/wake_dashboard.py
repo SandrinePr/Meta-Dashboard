@@ -6,6 +6,7 @@ opens Streamlit and does not process the queue.
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import sys
 import urllib.error
@@ -13,10 +14,17 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
-from sync.wake_server import GROWTH_WAKE_PATH
+# Load the path constant from the file itself. Importing the sync package
+# pulls in the dashboard dependencies, which the hourly workflow does not install.
+_spec = importlib.util.spec_from_file_location(
+    "growth_wake_path",
+    ROOT / "sync" / "wake_server.py",
+)
+if _spec is None or _spec.loader is None:
+    raise RuntimeError("growth wake path module is missing")
+_wake = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_wake)
+GROWTH_WAKE_PATH = _wake.GROWTH_WAKE_PATH
 
 
 def wake_url(base: str) -> str:
