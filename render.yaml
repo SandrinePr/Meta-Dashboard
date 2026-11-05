@@ -1,3 +1,8 @@
+# Reports, measurements and the growth queue live in the SQLite file from DATABASE_PATH.
+# This file does not attach a paid disk and does not change the current plan.
+# SandrinePr/Meta-Dashboard stays public. Snapshots belong in a separate
+# private repository. This blueprint does not name that repository and does
+# not deploy it. Without that private store, the growth tick runs no step.
 services:
   - type: web
     name: meta-dashboard
@@ -10,16 +15,14 @@ services:
         value: "3.11.9"
       - key: ENABLE_SCHEDULER
         value: "1"
+      # Same value as the GitHub Actions secret GROWTH_TICK_SECRET.
+      - key: GROWTH_TICK_SECRET
+        sync: false
+      # Set GITHUB_SNAPSHOT_REPO, GITHUB_SNAPSHOT_BRANCH and
+      # GITHUB_SNAPSHOT_TOKEN on the service only for a private repository.
+      # Do not point them at SandrinePr/Meta-Dashboard.
 
-  - type: cron
-    name: dashboard-wake
-    runtime: python
-    plan: free
-    schedule: "0 5-19 * * *"
-    buildCommand: pip install -r requirements.txt
-    startCommand: python scripts/wake_dashboard.py
-    envVars:
-      - key: PYTHON_VERSION
-        value: "3.11.9"
-      - key: DASHBOARD_URL
-        value: https://meta-dashboard.onrender.com
+# The hourly trigger is .github/workflows/growth-tick.yml on the existing
+# GitHub account. It calls https://meta-dashboard-9n92.onrender.com/internal/growth-tick
+# every hour, including night, and fails unless the body is a real tick.
+# There is no Render cron here, so the old wake job is not created again.

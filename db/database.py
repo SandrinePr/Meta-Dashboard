@@ -213,10 +213,13 @@ def initialize_database(db_path: Path | None = None, schema_path: Path | None = 
     """Create all tables and indexes from schema.sql, seeding first if needed."""
     from db.migrate import apply_comparison_schema
 
+    from db.durable_sqlite import restore_if_configured
+
     settings = get_settings()
     effective_db_path = db_path or settings.database_path
     effective_schema_path = schema_path or Path(__file__).with_name("schema.sql")
 
+    restore_if_configured(effective_db_path)
     ensure_seed_database(effective_db_path)
 
     schema_sql = effective_schema_path.read_text(encoding="utf-8")

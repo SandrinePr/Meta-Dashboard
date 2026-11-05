@@ -7,6 +7,7 @@ __pycache__/
 data/*.db
 data/*.sqlite
 data/*.db-journal
+data/*.published-sha
 data/backups/
 data/private/
 !data/seed_media.zip

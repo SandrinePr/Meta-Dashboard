@@ -1,4 +1,4 @@
-"""Run one of the three daily fetch jobs (morning / afternoon / evening)."""
+"""Run one fetch slot: a weekly-growth step, afternoon comparison, or evening refresh."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from db.database import initialize_database
 from sync.scheduler import (
     run_afternoon_comparison,
     run_evening_refresh,
-    run_morning_growth,
+    run_growth_tick,
 )
 
 
@@ -25,15 +25,15 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Run a scheduled dashboard fetch job.")
     parser.add_argument(
         "slot",
-        choices=("morning", "afternoon", "evening"),
-        help="morning=growth, afternoon=social vergelijking, evening=full refresh",
+        choices=("growth", "morning", "afternoon", "evening"),
+        help="growth=één weekstap; morning is alleen diezelfde stap, geen tweede dagelijkse growth",
     )
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     load_dotenv(ROOT / ".env", override=True)
     initialize_database()
-    if args.slot == "morning":
-        run_morning_growth()
+    if args.slot in {"growth", "morning"}:
+        run_growth_tick()
     elif args.slot == "afternoon":
         run_afternoon_comparison()
     else:

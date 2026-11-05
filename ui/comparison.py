@@ -843,8 +843,24 @@ def _render_top_block(
         )
 
 
+def _last_update_cell(state) -> str:
+    """Date when the full comparison set is stored; otherwise the current state."""
+    from analytics.account_sync_status import LABEL_FAILED, LABEL_PENDING
+
+    if state is None or state.kind == "pending":
+        return LABEL_PENDING
+    if state.kind == "failed":
+        reason = (state.error_message or "Ophalen mislukt").replace("\r", " ").replace("\n", " ")
+        return (
+            f"<span title=\"{html.escape(reason[:300], quote=True)}\">{LABEL_FAILED}</span>"
+        )
+    return html.escape(_fmt_dt(state.measured_at))
+
+
 def _render_account_delta_table(rows, *, show_exact_times: bool = True) -> None:
     """Growth table: geplaatste posts + follower/engagement deltas."""
+    from analytics.account_sync_status import load_account_sync_states
+
     _ = show_exact_times  # timestamps always shown on the account cell
     if not rows:
         st.markdown(
@@ -852,6 +868,10 @@ def _render_account_delta_table(rows, *, show_exact_times: bool = True) -> None:
             unsafe_allow_html=True,
         )
         return
+
+    account_ids = [int(row.account_id) for row in rows if getattr(row, "account_id", None)]
+    with get_connection() as conn:
+        sync_states = load_account_sync_states(conn, account_ids)
 
     body_rows: list[str] = []
     for row in rows:
@@ -897,6 +917,7 @@ def _render_account_delta_table(rows, *, show_exact_times: bool = True) -> None:
             f"<td class='rro-num'>{followers_cell}</td>"
             f"<td class='rro-num'>{likes_cell}</td>"
             f"<td class='rro-num'>{comments_cell}</td>"
+            f"<td class='rro-num'>{_last_update_cell(sync_states.get(int(row.account_id)))}</td>"
             "</tr>"
         )
 
@@ -909,6 +930,7 @@ def _render_account_delta_table(rows, *, show_exact_times: bool = True) -> None:
         "<th class='rro-num'>Δ Volgers</th>"
         "<th class='rro-num'>Δ Likes</th>"
         "<th class='rro-num'>Δ Reacties</th>"
+        "<th class='rro-num'>Laatste update</th>"
         "</tr></thead>"
         f"<tbody>{''.join(body_rows)}</tbody>"
         "</table></div>",

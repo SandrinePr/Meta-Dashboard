@@ -249,7 +249,7 @@ python scripts/merge_comparison_history.py `
 
 Het script maakt eerst back-ups, behoudt bestaande target-metingen, en voegt alleen ontbrekende **rechtstreeks opgeslagen** metingen toe op basis van `(platform, external_id, measured_at)`. Logtijden gelden niet als meettijd.
 
-Dagelijkse jobs draaien **in het webproces** (zelfde SQLite): 07:30 growth, 13:30 social vergelijking, 20:30 volledige refresh (Europe/Amsterdam). De Render cron `dashboard-wake` houdt de web service wakker; zet `DASHBOARD_URL` naar de live URL. Stel **geen** aparte worker in met een eigen DB-kopie.
+Jobs draaien **in het webproces** (zelfde SQLite): de growth-wachtrij elke 5 minuten zolang het proces wakker is (één stap, geen uur slaap; een gemiste vrijdag levert bij de volgende beurt precies één cyclus voor die vrijdag). Daarnaast 13:30 social vergelijking en 20:30 volledige refresh, ná de growth-stap. De Render cron `dashboard-wake` moet elk uur, ook ’s nachts, `DASHBOARD_URL/internal/growth-tick` aanroepen (`0 * * * *` UTC). Dat verzoek verwerkt één vervallen wachtrijstap. Een gewone pagina-aanvraag doet dat niet. Vrijdag 00:00 Amsterdam is 22:00 UTC in de zomertijd en 23:00 UTC in de wintertijd. Stel **geen** aparte worker in met een eigen DB-kopie. Zonder schijf die een herstart overleeft verdwijnen nieuwe metingen en de wachtrij bij een spin-down of redeploy.
 
 ### Dagelijkse run (lokaal gepland — nog niet bewezen)
 

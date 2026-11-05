@@ -1,7 +1,9 @@
-"""In-process daily fetch jobs (Europe/Amsterdam).
+"""In-process fetch jobs (Europe/Amsterdam).
 
 Runs in the web process so jobs write the same SQLite file the dashboard reads.
 Render cron cannot share disk with the web service; it only wakes this process.
+Growth does not sleep inside this process: each wake runs one queue step when
+``next_run_at`` is due.
 """
 
 from __future__ import annotations
@@ -15,7 +17,6 @@ from zoneinfo import ZoneInfo
 logger = logging.getLogger(__name__)
 
 AMSTERDAM = ZoneInfo("Europe/Amsterdam")
-MORNING_SOURCE = "schedule_morning_growth"
 AFTERNOON_SOURCE = "schedule_afternoon_comparison"
 EVENING_SOURCE = "schedule_evening_refresh"
 
@@ -75,25 +76,90 @@ def _run_locked(name: str, fn) -> None:
         _job_lock.release()
 
 
-def run_morning_growth() -> None:
-    from sync.comparison import run_comparison_sync
+def run_growth_tick_once():
+    """Run one due growth step and return it, including when another job holds the lock."""
+    from db.durable_sqlite import (
+        DurableConflict,
+        acquire_lease,
+        holder_id,
+        store_from_env,
+    )
+    from sync.growth_cycle import TickResult, tick_growth_cycle
 
-    def _job() -> None:
-        if scheduled_job_ran_today(MORNING_SOURCE):
-            logger.info("Morning growth already ran today; skip.")
-            return
-        result = run_comparison_sync(
-            trigger_source=MORNING_SOURCE,
-            mode="growth",
-            force=False,
-        )
+    if not _job_lock.acquire(blocking=False):
+        logger.warning("Skip scheduled job growth_tick; another job is still running.")
+        return TickResult(action="deferred", detail="Andere Meta-taak loopt.")
+    try:
+        logger.info("Scheduled job start: growth_tick")
+        snapshot = store_from_env()
+        if snapshot is None:
+            logger.warning("Growth tick stopped; durable storage is not configured.")
+            return TickResult(
+                action="storage_unavailable",
+                detail="Duurzame opslag is niet geconfigureerd. Er is geen stap uitgevoerd.",
+            )
+        try:
+            snapshot.ensure_private()
+        except DurableConflict:
+            logger.warning("Growth tick stopped; snapshot storage is not private.")
+            return TickResult(
+                action="storage_unavailable",
+                detail="Duurzame opslag is niet privé. Er is geen stap uitgevoerd.",
+            )
+        if not acquire_lease(
+            snapshot,
+            holder_id(),
+            datetime.now(tz=timezone.utc),
+        ):
+            logger.warning("Skip growth tick; another instance holds the snapshot lease.")
+            return TickResult(
+                action="deferred",
+                detail="Andere instantie bewaart de database.",
+            )
+        from config import get_settings
+        from db.database import initialize_database
+
+        database_path = get_settings().database_path
+        initialize_database(database_path)
+        try:
+            from db.durable_sqlite import publish_database
+
+            publish_database(database_path, snapshot)
+        except DurableConflict:
+            logger.exception("SQLite snapshot was not published")
+            return TickResult(
+                action="publish_failed",
+                detail="De externe kopie is niet bijgewerkt. Er is geen nieuwe stap uitgevoerd.",
+            )
+        result = tick_growth_cycle()
         logger.info(
-            "Morning growth status=%s run_id=%s",
-            result.status,
-            result.run_id,
+            "Growth tick action=%s cycle=%s account=%s",
+            result.action,
+            result.cycle_id,
+            result.username,
         )
+        try:
+            publish_database(database_path, snapshot)
+        except DurableConflict:
+            logger.exception("SQLite snapshot was not published")
+            return TickResult(
+                action="publish_failed",
+                cycle_id=result.cycle_id,
+                username=result.username,
+                detail="De stap staat lokaal, maar de externe kopie is niet bijgewerkt.",
+            )
+        logger.info("Scheduled job done: growth_tick")
+        return result
+    except Exception as exc:
+        logger.exception("Scheduled job failed: growth_tick")
+        return TickResult(action="error", detail=type(exc).__name__)
+    finally:
+        _job_lock.release()
 
-    _run_locked("morning_growth", _job)
+
+def run_growth_tick() -> None:
+    """One weekly-growth step, or a no-op when the queue is not due."""
+    run_growth_tick_once()
 
 
 def run_afternoon_comparison() -> None:
@@ -146,25 +212,26 @@ def run_evening_refresh() -> None:
 
 
 def catch_up_missed_jobs() -> None:
-    """Run today's due slot(s) if the process started after the scheduled time."""
+    """One due growth step first, then today's comparison slot if it has not run.
+
+    Afternoon and evening still share the Meta budget. They start only after
+    the growth step has claimed or deferred its own queue item.
+    """
     now = _amsterdam_now()
     minutes = now.hour * 60 + now.minute
-    morning_at = 7 * 60 + 30
     afternoon_at = 13 * 60 + 30
     evening_at = 20 * 60 + 30
+    try:
+        run_growth_tick()
+    except Exception:
+        logger.exception("Growth tick failed")
     try:
         if minutes >= evening_at:
             if not scheduled_job_ran_today(EVENING_SOURCE):
                 run_evening_refresh()
-            return
-        if minutes >= afternoon_at:
+        elif minutes >= afternoon_at:
             if not scheduled_job_ran_today(AFTERNOON_SOURCE):
                 run_afternoon_comparison()
-            elif not scheduled_job_ran_today(MORNING_SOURCE):
-                run_morning_growth()
-            return
-        if minutes >= morning_at and not scheduled_job_ran_today(MORNING_SOURCE):
-            run_morning_growth()
     except Exception:
         logger.exception("Scheduled catch-up failed")
 
@@ -193,10 +260,13 @@ def start_scheduler() -> None:
             return
 
         scheduler = BackgroundScheduler(timezone=AMSTERDAM)
+        # The old 07:30 morning_growth job is intentionally absent. Weekly
+        # growth is one due step per wake. Afternoon and evening stay.
         scheduler.add_job(
-            run_morning_growth,
-            CronTrigger(hour=7, minute=30, timezone=AMSTERDAM),
-            id="morning_growth",
+            run_growth_tick,
+            "interval",
+            minutes=5,
+            id="growth_cycle_tick",
             replace_existing=True,
             max_instances=1,
             coalesce=True,
@@ -220,8 +290,8 @@ def start_scheduler() -> None:
         scheduler.start()
         _scheduler = scheduler
         logger.info(
-            "Daily fetch scheduler started (07:30 growth, 13:30 comparison, "
-            "20:30 full refresh, Europe/Amsterdam)."
+            "Fetch scheduler started (growth queue every 5 min, 13:30 comparison, "
+            "20:30 full refresh, Europe/Amsterdam). Weekly growth opens Friday 00:00."
         )
         threading.Thread(
             target=catch_up_missed_jobs,

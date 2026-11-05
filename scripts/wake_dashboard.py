@@ -1,27 +1,83 @@
-"""HTTP ping to wake the Render web process so in-process jobs can run."""
+"""HTTP ping that wakes the Render web process and runs one growth step.
+
+The request goes to /internal/growth-tick. A request to the site root only
+opens Streamlit and does not process the queue.
+"""
 
 from __future__ import annotations
 
 import os
 import sys
+import urllib.error
 import urllib.request
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from sync.wake_server import GROWTH_WAKE_PATH
+
+
+def wake_url(base: str) -> str:
+    return base.strip().rstrip("/") + GROWTH_WAKE_PATH
+
+
+def wake_accepted(status: int, body: str) -> bool:
+    """True only for a real tick response, never for the Streamlit page."""
+    if status != 200:
+        return False
+    lowered = body.lower()
+    if "<html" in lowered or "<!doctype" in lowered:
+        return False
+    lines = [line.strip() for line in body.splitlines() if line.strip()]
+    if not lines or lines[0] != "growth-tick=ok":
+        return False
+    actions = [line.split("=", 1)[1] for line in lines if line.startswith("action=")]
+    if len(actions) != 1:
+        return False
+    return actions[0] not in {
+        "",
+        "unconfigured",
+        "unauthorized",
+        "publish_failed",
+        "storage_unavailable",
+        "error",
+    }
 
 
 def main() -> int:
-    url = (os.environ.get("DASHBOARD_URL") or "").strip().rstrip("/")
+    url = (os.environ.get("DASHBOARD_URL") or "").strip()
+    secret = (os.environ.get("GROWTH_TICK_SECRET") or "").strip()
     if not url:
         print("DASHBOARD_URL is not set", file=sys.stderr)
         return 1
+    if not secret:
+        print("GROWTH_TICK_SECRET is not set", file=sys.stderr)
+        return 1
+    target = wake_url(url)
     request = urllib.request.Request(
-        url,
-        headers={"User-Agent": "meta-dashboard-wake/1.0"},
+        target,
+        headers={
+            "User-Agent": "meta-dashboard-wake/1.0",
+            "Authorization": f"Bearer {secret}",
+        },
         method="GET",
     )
     try:
-        with urllib.request.urlopen(request, timeout=60) as response:
-            print(f"wake={response.status} url={url}")
+        with urllib.request.urlopen(request, timeout=90) as response:
+            body = response.read(4000).decode("utf-8", "replace")
+            status = int(response.status)
+    except urllib.error.HTTPError as exc:
+        body = exc.read(4000).decode("utf-8", "replace")
+        status = int(exc.code)
     except Exception as exc:
-        print(f"wake_failed={exc} url={url}", file=sys.stderr)
+        print(f"wake_failed={type(exc).__name__} url={target}", file=sys.stderr)
+        return 1
+    print(f"wake={status} url={target}")
+    print(body)
+    if not wake_accepted(status, body):
+        print("wake_rejected", file=sys.stderr)
         return 1
     return 0
 

@@ -240,10 +240,11 @@ def upsert_comment(
     author_id: str | None,
     published_at: str,
     raw_json: str | None,
+    parent_comment_id: int | None = None,
 ) -> UpsertResult:
-    """Insert or update a top-level comment."""
     text = redact_text(text) or ""
     raw_json = redact_json_text(raw_json)
+    """Insert or update a comment. The same external id is never stored twice."""
     existing = conn.execute(
         "SELECT id FROM comments WHERE platform = ? AND external_id = ?",
         (platform, external_id),
@@ -254,6 +255,7 @@ def upsert_comment(
             """
             UPDATE comments
             SET post_id = ?,
+                parent_comment_id = COALESCE(?, parent_comment_id),
                 text = ?,
                 author_name = ?,
                 author_id = ?,
@@ -261,7 +263,16 @@ def upsert_comment(
                 raw_json = ?
             WHERE id = ?
             """,
-            (post_id, text, author_name, author_id, published_at, raw_json, existing["id"]),
+            (
+                post_id,
+                parent_comment_id,
+                text,
+                author_name,
+                author_id,
+                published_at,
+                raw_json,
+                existing["id"],
+            ),
         )
         return UpsertResult(row_id=int(existing["id"]), created=False)
 
@@ -270,9 +281,19 @@ def upsert_comment(
         INSERT INTO comments (
             platform, external_id, post_id, parent_comment_id,
             author_name, author_id, text, published_at, raw_json
-        ) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (platform, external_id, post_id, author_name, author_id, text, published_at, raw_json),
+        (
+            platform,
+            external_id,
+            post_id,
+            parent_comment_id,
+            author_name,
+            author_id,
+            text,
+            published_at,
+            raw_json,
+        ),
     )
     return UpsertResult(row_id=int(cursor.lastrowid), created=True)
 

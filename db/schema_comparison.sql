@@ -124,3 +124,109 @@ CREATE INDEX IF NOT EXISTS idx_discovery_request_log_run
     ON comparison_discovery_request_log(fetch_run_id, page_index);
 CREATE INDEX IF NOT EXISTS idx_discovery_checkpoints_updated
     ON comparison_discovery_checkpoints(updated_at DESC);
+
+-- Frozen weekly reports. Opening one reads this row and does not call Meta or AI.
+CREATE TABLE IF NOT EXISTS weekly_reports (
+    id INTEGER PRIMARY KEY,
+    created_at TEXT NOT NULL,
+    period_start TEXT NOT NULL,
+    period_end TEXT NOT NULL,
+    own_account_id INTEGER,
+    account_label TEXT,
+    snapshot_json TEXT NOT NULL,
+    ai_status TEXT NOT NULL,
+    ai_summary TEXT,
+    ai_advice_json TEXT,
+    ai_model TEXT,
+    ai_generated_at TEXT,
+    FOREIGN KEY(own_account_id) REFERENCES accounts(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_weekly_reports_created
+    ON weekly_reports(created_at DESC);
+
+-- Weekly follower snapshots. One row per Friday (Europe/Amsterdam).
+-- History in account_measurements is never deleted from here.
+CREATE TABLE IF NOT EXISTS growth_cycles (
+    id INTEGER PRIMARY KEY,
+    week_start TEXT NOT NULL UNIQUE,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    next_run_at TEXT,
+    finished_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS growth_cycle_accounts (
+    id INTEGER PRIMARY KEY,
+    cycle_id INTEGER NOT NULL,
+    account_id INTEGER,
+    username TEXT NOT NULL,
+    role TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    step TEXT NOT NULL,
+    cursor_after TEXT,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    error_message TEXT,
+    next_run_at TEXT,
+    last_success_measured_at TEXT,
+    measurement_id INTEGER,
+    measured_at TEXT,
+    followers_count INTEGER,
+    updated_at TEXT NOT NULL,
+    UNIQUE(cycle_id, username),
+    FOREIGN KEY(cycle_id) REFERENCES growth_cycles(id),
+    FOREIGN KEY(account_id) REFERENCES accounts(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_growth_cycle_accounts_cycle
+    ON growth_cycle_accounts(cycle_id, position);
+
+-- Editable instruction texts only. API keys stay in the environment, never here.
+CREATE TABLE IF NOT EXISTS ai_prompt_settings (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    system_prompt TEXT NOT NULL,
+    user_prompt TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+-- Ordered media parts for one post. A URL here is not proof that a model saw the file.
+CREATE TABLE IF NOT EXISTS post_media_items (
+    id INTEGER PRIMARY KEY,
+    post_id INTEGER NOT NULL,
+    position INTEGER NOT NULL,
+    role TEXT NOT NULL,
+    external_id TEXT,
+    media_type TEXT,
+    source_url TEXT,
+    local_path TEXT,
+    available INTEGER NOT NULL DEFAULT 0,
+    unavailable_reason TEXT,
+    fetched_at TEXT NOT NULL,
+    UNIQUE(post_id, position, role),
+    FOREIGN KEY(post_id) REFERENCES posts(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_post_media_items_post
+    ON post_media_items(post_id, position);
+
+-- Monotonic snapshot version. Bumped only when a new database copy is published.
+CREATE TABLE IF NOT EXISTS durable_generation (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    generation INTEGER NOT NULL
+);
+
+-- One stored content description per post. Unchanged content is not sent again.
+CREATE TABLE IF NOT EXISTS content_descriptions (
+    post_id INTEGER PRIMARY KEY,
+    fingerprint TEXT NOT NULL,
+    coverage TEXT NOT NULL,
+    coverage_note TEXT,
+    description_json TEXT,
+    files_processed_json TEXT,
+    model TEXT,
+    prompt_version TEXT,
+    analyzed_at TEXT,
+    FOREIGN KEY(post_id) REFERENCES posts(id)
+);
