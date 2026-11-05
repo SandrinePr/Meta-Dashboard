@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from typing import Any, Iterable
 
 from db.repository import UpsertResult, merge_post_raw_json
+from meta.redact import redact_json_text, redact_text
 
 DEFAULT_OWN_USERNAME = "theartofliving.online"
 DEFAULT_OWN_EXTERNAL_ID = "17841400191455972"
@@ -406,6 +407,9 @@ def upsert_comparison_post(
     raw_json: str | None,
 ) -> UpsertResult:
     content_type = classify_content_type(media_type, media_product_type)
+    raw_json = redact_json_text(raw_json)
+    text = redact_text(text)
+    permalink = redact_text(permalink)
     existing = conn.execute(
         "SELECT id, raw_json FROM posts WHERE platform = ? AND external_id = ?",
         ("instagram", external_id),
@@ -421,9 +425,9 @@ def upsert_comparison_post(
             media_val = payload.get("media_url")
             thumb_val = payload.get("thumbnail_url")
             if isinstance(media_val, str) and media_val.strip():
-                incoming_media_url = media_val.strip()
+                incoming_media_url = redact_text(media_val.strip())
             if isinstance(thumb_val, str) and thumb_val.strip():
-                incoming_thumbnail_url = thumb_val.strip()
+                incoming_thumbnail_url = redact_text(thumb_val.strip())
 
     if existing:
         merged = merge_post_raw_json(existing["raw_json"], raw_json, clear_unavailable=True)
@@ -956,13 +960,15 @@ def save_discovery_checkpoint(
             normalize_username(username),
             period_start,
             period_end,
-            cursor_after,
+            redact_text(cursor_after),
             pages_fetched,
             posts_fetched,
             1 if is_complete else 0,
             last_fetch_run_id,
             account_external_id,
-            json.dumps(account_payload, ensure_ascii=False) if account_payload else None,
+            redact_json_text(json.dumps(account_payload, ensure_ascii=False))
+            if account_payload
+            else None,
             utc_now_iso(),
         ),
     )
@@ -1059,11 +1065,11 @@ def log_discovery_request(
             page_size,
             posts_received,
             duration_ms,
-            json.dumps(usage_headers or {}, ensure_ascii=False),
-            cursor_before,
-            cursor_after,
+            redact_json_text(json.dumps(usage_headers or {}, ensure_ascii=False)),
+            redact_text(cursor_before),
+            redact_text(cursor_after),
             status,
-            error_message,
+            redact_text(error_message),
             measured_at,
             utc_now_iso(),
         ),

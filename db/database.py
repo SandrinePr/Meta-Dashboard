@@ -12,6 +12,8 @@ from config import get_settings
 
 logger = logging.getLogger(__name__)
 
+# Optional local file, never committed. A fresh install without this file
+# gets an empty database with the same schema.
 SEED_DB_PATH = Path(__file__).resolve().parents[1] / "data" / "seed_social_search.db"
 SEED_MEDIA_ZIP = Path(__file__).resolve().parents[1] / "data" / "seed_media.zip"
 SEED_VERSION_PATH = Path(__file__).resolve().parents[1] / "data" / "seed_version.txt"

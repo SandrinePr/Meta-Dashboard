@@ -16,6 +16,7 @@ from tenacity import (
 )
 
 from config import get_settings
+from meta.redact import redact_text
 from meta.endpoints import (
     COMMENTS_EDGE,
     DEFAULT_LIMIT,
@@ -180,7 +181,11 @@ class MetaClient:
         try:
             response = self.http.get(url, params=params, timeout=self.timeout_seconds)
         except (requests.Timeout, requests.ConnectionError) as exc:
-            logger.warning("Meta network error params=%s error=%s", safe_params, exc)
+            logger.warning(
+                "Meta network error params=%s error=%s",
+                safe_params,
+                redact_text(str(exc)),
+            )
             raise
 
         duration_ms = (time.perf_counter() - started) * 1000.0
@@ -215,7 +220,9 @@ class MetaClient:
         except ValueError:
             pass
 
-        message = error_payload.get("message") or response.text or "Unknown Meta API error"
+        message = redact_text(
+            str(error_payload.get("message") or response.text or "Unknown Meta API error")
+        ) or "Unknown Meta API error"
         error_code = error_payload.get("code")
         rate_info = build_rate_limit_info(
             error_code=error_code if isinstance(error_code, int) else None,

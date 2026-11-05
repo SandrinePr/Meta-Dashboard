@@ -35,6 +35,7 @@ def main() -> None:
 
     sys.path.insert(0, str(ROOT))
     from db.repository import rebuild_search_index
+    from meta.redact import scrub_connection
 
     if TMP.exists():
         TMP.unlink()
@@ -80,6 +81,7 @@ def main() -> None:
         "DELETE FROM hashtags WHERE id NOT IN (SELECT hashtag_id FROM post_hashtags)"
     )
     conn.execute("DELETE FROM search_index")
+    scrub_connection(conn)
     rebuild_search_index(conn)
     conn.commit()
 

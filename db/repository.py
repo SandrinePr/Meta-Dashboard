@@ -7,6 +7,8 @@ import sqlite3
 from dataclasses import dataclass
 from typing import Any
 
+from meta.redact import redact_json_text, redact_text
+
 # Keep previously fetched Insights when a re-sync stores media without them
 # (failed Insights call, rate limit, deleted object, etc.).
 _INSIGHT_PRESERVE_KEYS = (
@@ -38,6 +40,8 @@ def merge_post_raw_json(
     clear_unavailable: bool = False,
 ) -> str | None:
     """Merge new post JSON onto existing, preserving Insights/media when missing on new."""
+    existing_raw = redact_json_text(existing_raw)
+    new_raw = redact_json_text(new_raw)
     if not new_raw:
         return existing_raw
     if not existing_raw:
@@ -90,7 +94,7 @@ def mark_post_unavailable(
         payload["rro_unavailable_reason"] = reason
     conn.execute(
         "UPDATE posts SET raw_json = ?, last_synced_at = CURRENT_TIMESTAMP WHERE id = ?",
-        (json.dumps(payload, ensure_ascii=False), post_id),
+        (redact_json_text(json.dumps(payload, ensure_ascii=False)), post_id),
     )
 
 
@@ -154,6 +158,11 @@ def upsert_post(
     raw_json: str | None,
     clear_unavailable: bool = False,
 ) -> UpsertResult:
+    media_url = redact_text(media_url)
+    thumbnail_url = redact_text(thumbnail_url)
+    permalink = redact_text(permalink)
+    text = redact_text(text)
+    raw_json = redact_json_text(raw_json)
     """Insert or update a post."""
     existing = conn.execute(
         "SELECT id, raw_json FROM posts WHERE platform = ? AND external_id = ?",
@@ -233,6 +242,8 @@ def upsert_comment(
     raw_json: str | None,
 ) -> UpsertResult:
     """Insert or update a top-level comment."""
+    text = redact_text(text) or ""
+    raw_json = redact_json_text(raw_json)
     existing = conn.execute(
         "SELECT id FROM comments WHERE platform = ? AND external_id = ?",
         (platform, external_id),
@@ -291,6 +302,9 @@ def upsert_search_index(
     permalink: str | None,
     thumbnail_url: str | None,
 ) -> None:
+    text = redact_text(text)
+    permalink = redact_text(permalink)
+    thumbnail_url = redact_text(thumbnail_url)
     """Replace one FTS index row for an entity."""
     conn.execute(
         "DELETE FROM search_index WHERE entity_type = ? AND entity_id = ?",
