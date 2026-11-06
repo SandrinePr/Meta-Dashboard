@@ -5,16 +5,19 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
+from analytics.comparison import INSUFFICIENT_MEASUREMENTS, growth_rows
 from db.comparison_repository import (
     ensure_default_comparison_accounts,
     finish_fetch_run,
     start_fetch_run,
+    upsert_account_measurement,
     upsert_comparison_post,
     upsert_post_measurement,
 )
 from db.database import get_connection, initialize_database
 from meta.client import MetaRequestError
 from sync.daily_update import MediaPage, run_daily_update
+from ui.comparison import format_engagement_delta
 from sync.scheduler import EVENING_SOURCE, run_evening_refresh
 
 NOW = datetime(2026, 11, 6, 12, 30, tzinfo=timezone.utc)
@@ -331,3 +334,208 @@ def test_second_page_keeps_the_original_boundary(tmp_path: Path, monkeypatch) ->
             """
         ).fetchall()
         assert [row["like_count"] for row in likes] == [9]
+
+
+def test_recent_known_post_likes_resume_after_limit(tmp_path: Path, monkeypatch) -> None:
+    """A known post from the last 7 days goes 50 → 70. Older posts stay put."""
+    _setup(tmp_path, monkeypatch)
+    with get_connection() as conn:
+        own = ensure_default_comparison_accounts(conn)
+        run = start_fetch_run(
+            conn,
+            trigger_source="seed",
+            measured_at="2026-11-05T12:00:00+00:00",
+            period_start="2026-11-05T12:00:00+00:00",
+            period_end="2026-11-05T12:00:00+00:00",
+        )
+        recent = upsert_comparison_post(
+            conn,
+            account_id=own.account_id,
+            external_id="recent-post",
+            text="recent",
+            permalink="https://instagram.com/p/recent",
+            media_type="IMAGE",
+            media_product_type="FEED",
+            published_at="2026-11-03T12:00:00+00:00",
+            raw_json='{"id":"recent-post"}',
+        )
+        upsert_post_measurement(
+            conn,
+            post_id=recent.row_id,
+            fetch_run_id=run,
+            measured_at="2026-11-05T12:00:00+00:00",
+            like_count=50,
+            comments_count=4,
+        )
+        old = upsert_comparison_post(
+            conn,
+            account_id=own.account_id,
+            external_id="old-post",
+            text="oud",
+            permalink="https://instagram.com/p/old",
+            media_type="IMAGE",
+            media_product_type="FEED",
+            published_at="2026-08-01T12:00:00+00:00",
+            raw_json='{"id":"old-post"}',
+        )
+        upsert_post_measurement(
+            conn,
+            post_id=old.row_id,
+            fetch_run_id=run,
+            measured_at="2026-11-05T12:00:00+00:00",
+            like_count=9,
+            comments_count=1,
+        )
+        upsert_account_measurement(
+            conn,
+            account_id=own.account_id,
+            fetch_run_id=run,
+            measured_at="2026-11-05T12:00:00+00:00",
+            followers_count=100,
+            media_count=2,
+        )
+        finish_fetch_run(conn, run, status="completed")
+        conn.commit()
+        own_id = own.account_id
+
+    limited = {"open": True}
+
+    def _profile(client, host_id, username, *, own):
+        return {
+            "id": "17841400191455972" if own else f"id-{username}",
+            "username": username,
+            "name": username,
+            "followers_count": 100,
+            "media_count": 2,
+        }
+
+    def _media(client, host_id, username, *, own, cursor, watermark):
+        if username != "theartofliving.online":
+            return MediaPage([], None, True)
+        if cursor is None:
+            assert watermark is not None
+            assert watermark.isoformat().startswith("2026-11-03")
+            return MediaPage(
+                [
+                    {
+                        "id": "recent-post",
+                        "timestamp": "2026-11-03T12:00:00+0000",
+                        "like_count": 70,
+                        "comments_count": 4,
+                        "caption": "recent",
+                    }
+                ],
+                "recent-2",
+                True,
+            )
+        assert cursor == "recent-2"
+        assert watermark is not None
+        assert watermark.isoformat().startswith("2026-10-30")
+        if limited["open"]:
+            raise MetaRequestError("limit", error_code=4, is_rate_limited=True)
+        return MediaPage(
+            [
+                {
+                    "id": "week-post",
+                    "timestamp": "2026-11-02T10:00:00+0000",
+                    "like_count": 11,
+                    "comments_count": 1,
+                    "caption": "ook binnen 7 dagen",
+                },
+                {
+                    "id": "old-post",
+                    "timestamp": "2026-08-01T12:00:00+0000",
+                    "like_count": 99,
+                    "comments_count": 1,
+                    "caption": "buiten het venster",
+                },
+            ],
+            "recent-3",
+            True,
+        )
+
+    monkeypatch.setattr("sync.daily_update._load_profile", _profile)
+    monkeypatch.setattr("sync.daily_update._load_media_page", _media)
+
+    first = run_daily_update(
+        trigger_source="schedule_afternoon_comparison", client=object(), now=NOW
+    )
+    assert first.accounts[0].posts_fetched == 0
+    with get_connection() as conn:
+        likes = conn.execute(
+            """
+            SELECT like_count FROM post_measurements
+            WHERE post_id = (SELECT id FROM posts WHERE external_id = 'recent-post')
+            ORDER BY measured_at
+            """
+        ).fetchall()
+        assert [row["like_count"] for row in likes] == [50, 70]
+        step = conn.execute(
+            """
+            SELECT phase, cursor_after FROM daily_comparison_steps
+            WHERE username = 'theartofliving.online'
+              AND trigger_source = 'schedule_afternoon_comparison'
+            """
+        ).fetchone()
+        assert step["phase"] == "recent"
+        assert step["cursor_after"] == "recent-2"
+
+    grow = growth_rows(own_account_id=own_id, competitor_usernames=[])
+    assert grow[0].comparable_posts == 1
+    assert grow[0].likes_delta == 20
+    assert format_engagement_delta(grow[0].comparable_posts, grow[0].likes_delta) == "+20"
+    assert format_engagement_delta(0, None) == INSUFFICIENT_MEASUREMENTS
+
+    second = run_daily_update(
+        trigger_source="schedule_afternoon_comparison", client=object(), now=NOW
+    )
+    assert second.rate_limited is True
+    with get_connection() as conn:
+        step = conn.execute(
+            """
+            SELECT phase, cursor_after FROM daily_comparison_steps
+            WHERE username = 'theartofliving.online'
+              AND trigger_source = 'schedule_afternoon_comparison'
+            """
+        ).fetchone()
+        assert step["phase"] == "recent"
+        assert step["cursor_after"] == "recent-2"
+        missing = conn.execute(
+            "SELECT id FROM posts WHERE external_id = 'week-post'"
+        ).fetchone()
+        assert missing is None
+        conn.execute("DELETE FROM comparison_rate_limits")
+        conn.commit()
+
+    limited["open"] = False
+    evening = run_daily_update(
+        trigger_source="schedule_evening_refresh",
+        client=object(),
+        now=NOW.replace(hour=19, minute=30),
+    )
+    own_pages = [item for item in evening.accounts if item.username == "theartofliving.online"]
+    assert own_pages[0].posts_fetched == 0
+    with get_connection() as conn:
+        week = conn.execute(
+            """
+            SELECT like_count FROM post_measurements
+            WHERE post_id = (SELECT id FROM posts WHERE external_id = 'week-post')
+            """
+        ).fetchone()
+        assert week["like_count"] == 11
+        old_likes = conn.execute(
+            """
+            SELECT like_count FROM post_measurements
+            WHERE post_id = (SELECT id FROM posts WHERE external_id = 'old-post')
+            ORDER BY measured_at
+            """
+        ).fetchall()
+        assert [row["like_count"] for row in old_likes] == [9]
+        step = conn.execute(
+            """
+            SELECT phase FROM daily_comparison_steps
+            WHERE username = 'theartofliving.online'
+              AND trigger_source = 'schedule_evening_refresh'
+            """
+        ).fetchone()
+        assert step["phase"] == "done"

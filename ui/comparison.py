@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 import streamlit as st
 
 from analytics.comparison import (
+    INSUFFICIENT_MEASUREMENTS,
     account_comparison_rows,
     content_mix_rows,
     growth_overview,
@@ -143,6 +144,13 @@ def _fmt_delta(value: int | None) -> str:
         return DAILY_NOT_MEASURED
     sign = "+" if value > 0 else ""
     return f"{sign}{value:,}".replace(",", ".")
+
+
+def format_engagement_delta(comparable_posts: int, delta: int | None) -> str:
+    """Δ Likes / Δ Reacties. Zero shared posts stay ‘Onvoldoende metingen’."""
+    if comparable_posts == 0:
+        return INSUFFICIENT_MEASUREMENTS
+    return _fmt_delta(delta)
 
 
 def _fmt_avg(value: float | None) -> str:
@@ -889,12 +897,17 @@ def _render_account_delta_table(rows, *, show_exact_times: bool = True) -> None:
         else:
             followers_cell = html.escape(_fmt_delta(row.followers_delta))
             if row.comparable_posts == 0:
-                likes_cell = "—"
-                comments_cell = "—"
+                likes_cell = html.escape(INSUFFICIENT_MEASUREMENTS)
+                comments_cell = html.escape(INSUFFICIENT_MEASUREMENTS)
+                coverage = INSUFFICIENT_MEASUREMENTS
             else:
-                likes_cell = html.escape(_fmt_delta(row.likes_delta))
-                comments_cell = html.escape(_fmt_delta(row.comments_delta))
-            coverage = f"{row.comparable_posts} posts vergelijkbaar"
+                likes_cell = html.escape(
+                    format_engagement_delta(row.comparable_posts, row.likes_delta)
+                )
+                comments_cell = html.escape(
+                    format_engagement_delta(row.comparable_posts, row.comments_delta)
+                )
+                coverage = f"{row.comparable_posts} posts vergelijkbaar"
             if row.posts_only_start or row.posts_only_end:
                 coverage += (
                     f" · deels "

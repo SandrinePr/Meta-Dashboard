@@ -16,6 +16,7 @@ from db.comparison_repository import (
 from db.database import get_connection
 
 AMSTERDAM = ZoneInfo("Europe/Amsterdam")
+INSUFFICIENT_MEASUREMENTS = "Onvoldoende metingen"
 
 
 @dataclass(frozen=True, slots=True)

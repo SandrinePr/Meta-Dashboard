@@ -7,6 +7,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 
 from analytics.comparison import (
+    INSUFFICIENT_MEASUREMENTS,
     account_comparison_rows,
     content_mix_rows,
     growth_overview,
@@ -42,6 +43,7 @@ from ui.comparison import (
     _fmt_pct,
     _should_show_rate_limit_banner,
     add_competitor,
+    format_engagement_delta,
     remove_competitor,
     resolve_period,
 )
@@ -442,3 +444,66 @@ def test_preferences_persist(tmp_path: Path, monkeypatch) -> None:
         own_id, competitors = get_preferences(conn)
     assert own_id is not None
     assert competitors == ["hoog.design", "vtwonen"]
+
+
+def test_zero_comparable_posts_are_insufficient(tmp_path: Path, monkeypatch) -> None:
+    _setup(tmp_path, monkeypatch)
+    with get_connection() as conn:
+        own = ensure_default_comparison_accounts(conn)
+        run_a = start_fetch_run(
+            conn,
+            trigger_source="a",
+            measured_at="2026-11-05T12:00:00+00:00",
+            period_start="2026-11-05T12:00:00+00:00",
+            period_end="2026-11-05T12:00:00+00:00",
+        )
+        run_b = start_fetch_run(
+            conn,
+            trigger_source="b",
+            measured_at="2026-11-06T12:30:00+00:00",
+            period_start="2026-11-06T12:30:00+00:00",
+            period_end="2026-11-06T12:30:00+00:00",
+        )
+        post = upsert_comparison_post(
+            conn,
+            account_id=own.account_id,
+            external_id="only-once",
+            text="een meting",
+            permalink="https://instagram.com/p/once",
+            media_type="IMAGE",
+            media_product_type="FEED",
+            published_at="2026-11-06T08:00:00+00:00",
+            raw_json='{"id":"only-once"}',
+        )
+        upsert_post_measurement(
+            conn,
+            post_id=post.row_id,
+            fetch_run_id=run_b,
+            measured_at="2026-11-06T12:30:00+00:00",
+            like_count=70,
+            comments_count=4,
+        )
+        for run_id, measured_at in (
+            (run_a, "2026-11-05T12:00:00+00:00"),
+            (run_b, "2026-11-06T12:30:00+00:00"),
+        ):
+            upsert_account_measurement(
+                conn,
+                account_id=own.account_id,
+                fetch_run_id=run_id,
+                measured_at=measured_at,
+                followers_count=100,
+                media_count=1,
+            )
+        finish_fetch_run(conn, run_a, status="completed")
+        finish_fetch_run(conn, run_b, status="completed")
+        conn.commit()
+        own_id = own.account_id
+
+    grow = growth_rows(own_account_id=own_id, competitor_usernames=[])
+    assert grow[0].insufficient is False
+    assert grow[0].comparable_posts == 0
+    assert grow[0].likes_delta is None
+    assert grow[0].comments_delta is None
+    assert format_engagement_delta(0, None) == INSUFFICIENT_MEASUREMENTS
+    assert INSUFFICIENT_MEASUREMENTS == "Onvoldoende metingen"

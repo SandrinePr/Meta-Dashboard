@@ -27,6 +27,7 @@ from reportlab.platypus import (
 )
 
 from analytics.comparison import (
+    INSUFFICIENT_MEASUREMENTS,
     account_comparison_rows,
     content_mix_rows,
     growth_overview,
@@ -551,9 +552,17 @@ def build_comparison_pdf(selection: ReportSelection) -> bytes:
                     pct = (row.followers_delta / row.followers_start) * 100.0
                     cells.append(_fmt_pct(pct))
             if "likes" in metrics:
-                cells.append("—" if row.comparable_posts == 0 else _fmt_delta(row.likes_delta))
+                cells.append(
+                    INSUFFICIENT_MEASUREMENTS
+                    if row.comparable_posts == 0
+                    else _fmt_delta(row.likes_delta)
+                )
             if "comments" in metrics:
-                cells.append("—" if row.comparable_posts == 0 else _fmt_delta(row.comments_delta))
+                cells.append(
+                    INSUFFICIENT_MEASUREMENTS
+                    if row.comparable_posts == 0
+                    else _fmt_delta(row.comments_delta)
+                )
             data.append(cells)
         if len(data) > 1:
             story.append(_table(data))

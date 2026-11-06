@@ -1,8 +1,8 @@
 """One small step per account for the 13:30 and 20:30 comparison.
 
-A step stores a follower measurement and at most one page of posts newer than
-the posts already stored. Older rows stay. A Meta limit stops the slot and the
-next wake continues at the last saved account.
+A step stores a follower measurement and at most one page. New posts stay
+behind the original watermark. Posts from the last 7 days are measured again,
+one page per wake. A Meta limit keeps the cursor. Older history stays put.
 """
 
 from __future__ import annotations
@@ -56,6 +56,7 @@ logger = logging.getLogger(__name__)
 
 AMSTERDAM = ZoneInfo("Europe/Amsterdam")
 DAILY_PAGE = 25
+RECENT_DAYS = 7
 _MIN_PAGE = 5
 _RATE_WAIT = timedelta(minutes=15)
 
@@ -162,13 +163,13 @@ def daily_slot_complete(trigger_source: str, *, now: datetime | None = None) -> 
 
 
 def _open_scan(conn, username: str, *, day: str, trigger_source: str):
-    """Unfinished page cursor. Its original date stays the boundary."""
+    """Unfinished page cursor. The saved boundary stays with that cursor."""
     return conn.execute(
         """
-        SELECT cursor_after, watermark_at
+        SELECT phase, cursor_after, watermark_at
         FROM daily_comparison_steps
         WHERE username = ?
-          AND phase = 'posts'
+          AND phase IN ('posts', 'recent')
           AND cursor_after IS NOT NULL
           AND NOT (amsterdam_day = ? AND trigger_source = ?)
         ORDER BY updated_at DESC
@@ -194,16 +195,48 @@ def _watermark(conn, account_id: int | None) -> datetime | None:
     return parse_meta_timestamp(str(row["newest"]))
 
 
+def _published_at(post: dict[str, Any]) -> datetime | None:
+    stamp = post.get("timestamp") if isinstance(post.get("timestamp"), str) else None
+    return parse_meta_timestamp(stamp)
+
+
 def _newer_posts(posts: list[dict[str, Any]], watermark: datetime | None) -> list[dict[str, Any]]:
     if watermark is None:
         return posts
+    return [
+        post
+        for post in posts
+        if (published := _published_at(post)) is not None and published > watermark
+    ]
+
+
+def _recent_cutoff(moment: datetime) -> datetime:
+    return moment.astimezone(timezone.utc) - timedelta(days=RECENT_DAYS)
+
+
+def _known_recent_posts(
+    posts: list[dict[str, Any]],
+    *,
+    watermark: datetime | None,
+    cutoff: datetime,
+) -> list[dict[str, Any]]:
+    """Posts already inside the recent window, including ones on this page."""
     kept: list[dict[str, Any]] = []
     for post in posts:
-        stamp = post.get("timestamp") if isinstance(post.get("timestamp"), str) else None
-        published = parse_meta_timestamp(stamp)
-        if published is not None and published > watermark:
-            kept.append(post)
+        published = _published_at(post)
+        if published is None or published < cutoff:
+            continue
+        if watermark is not None and published > watermark:
+            continue
+        kept.append(post)
     return kept
+
+
+def _passed_cutoff(posts: list[dict[str, Any]], cutoff: datetime) -> bool:
+    return any(
+        (published := _published_at(post)) is not None and published < cutoff
+        for post in posts
+    )
 
 
 def _is_rate_limit(exc: MetaRequestError) -> bool:
@@ -257,9 +290,7 @@ def _load_media_page(
             for post in posts
             if isinstance(post.get("timestamp"), str)
         )
-        if reached or not cursor_after:
-            return MediaPage(posts, None, True)
-        return MediaPage(posts, cursor_after, False)
+        return MediaPage(posts, cursor_after, bool(reached or not cursor_after))
 
     limit = DAILY_PAGE
     cutoff = watermark or datetime(1970, 1, 1, tzinfo=timezone.utc)
@@ -289,7 +320,7 @@ def _load_media_page(
         return MediaPage(page.posts, None, True)
     return MediaPage(
         page.posts,
-        None if page.reached_cutoff or not page.cursor_after else page.cursor_after,
+        page.cursor_after,
         bool(page.reached_cutoff or not page.cursor_after),
     )
 
@@ -366,7 +397,7 @@ def run_daily_update(
     client: MetaClient | None = None,
     now: datetime | None = None,
 ) -> ComparisonSyncResult:
-    """Followers plus one new-post page per account. Resume after a Meta limit."""
+    """Followers, one new-post page, then recent likes and comments."""
     initialize_database()
     moment = now or datetime.now(tz=timezone.utc)
     if moment.tzinfo is None:
@@ -470,12 +501,13 @@ def run_daily_update(
                             watermark_at = (
                                 str(carried["watermark_at"]) if carried["watermark_at"] else None
                             )
+                            phase = str(carried["phase"] or "posts")
                             conn.execute(
                                 """
                                 UPDATE daily_comparison_steps
                                 SET phase = 'done', cursor_after = NULL, updated_at = ?
                                 WHERE username = ?
-                                  AND phase = 'posts'
+                                  AND phase IN ('posts', 'recent')
                                   AND cursor_after IS NOT NULL
                                   AND NOT (amsterdam_day = ? AND trigger_source = ?)
                                 """,
@@ -488,7 +520,7 @@ def run_daily_update(
                                 if watermark
                                 else None
                             )
-                        phase = "posts"
+                            phase = "posts"
                         _save_step(
                             conn,
                             day=day,
@@ -510,6 +542,7 @@ def run_daily_update(
                         )
 
                     watermark = parse_meta_timestamp(watermark_at) if watermark_at else None
+                    cutoff = _recent_cutoff(moment)
                     page = _load_media_page(
                         api,
                         host.external_id,
@@ -518,7 +551,19 @@ def run_daily_update(
                         cursor=cursor,
                         watermark=watermark,
                     )
-                    fresh = _newer_posts(page.posts, watermark)
+                    if phase == "recent":
+                        fresh: list[dict[str, Any]] = []
+                        recent = _known_recent_posts(page.posts, watermark=None, cutoff=cutoff)
+                    else:
+                        fresh = _newer_posts(page.posts, watermark)
+                        fresh_ids = {str(post.get("id") or "") for post in fresh}
+                        recent = [
+                            post
+                            for post in _known_recent_posts(
+                                page.posts, watermark=watermark, cutoff=cutoff
+                            )
+                            if str(post.get("id") or "") not in fresh_ids
+                        ]
                     if account_id is None:
                         raise MetaRequestError(f"Geen Instagram-ID voor @{username}.")
                     stored, _created = _store_media_batch(
@@ -528,15 +573,39 @@ def run_daily_update(
                         fetch_run_id=run_id,
                         measured_at=measured_at,
                     )
+                    remeasured, _again = _store_media_batch(
+                        conn,
+                        account_id=account_id,
+                        posts=recent,
+                        fetch_run_id=run_id,
+                        measured_at=measured_at,
+                    )
                     posts_stored += stored
-                    phase = "posts" if page.cursor_after and not page.reached_older else "done"
+                    if phase == "recent":
+                        keep_recent = bool(
+                            page.cursor_after
+                            and not page.reached_older
+                            and not _passed_cutoff(page.posts, cutoff)
+                        )
+                        phase = "recent" if keep_recent else "done"
+                        next_cursor = page.cursor_after if keep_recent else None
+                    elif page.cursor_after and not page.reached_older:
+                        phase = "posts"
+                        next_cursor = page.cursor_after
+                    elif page.cursor_after and not _passed_cutoff(page.posts, cutoff):
+                        phase = "recent"
+                        next_cursor = page.cursor_after
+                        watermark_at = cutoff.astimezone(timezone.utc).isoformat()
+                    else:
+                        phase = "done"
+                        next_cursor = None
                     _save_step(
                         conn,
                         day=day,
                         trigger_source=trigger_source,
                         username=username,
                         phase=phase,
-                        cursor_after=page.cursor_after if phase == "posts" else None,
+                        cursor_after=next_cursor,
                         watermark_at=watermark_at,
                         posts_stored=posts_stored,
                         error_message=None,
@@ -560,9 +629,10 @@ def run_daily_update(
                     result.accounts.append(summary)
                     conn.commit()
                     logger.info(
-                        "Dagelijkse stap @%s posts_nieuw=%s fase=%s.",
+                        "Dagelijkse stap @%s posts_nieuw=%s opnieuw_gemeten=%s fase=%s.",
                         username,
                         stored,
+                        remeasured,
                         phase,
                     )
                 except MetaRequestError as exc:
