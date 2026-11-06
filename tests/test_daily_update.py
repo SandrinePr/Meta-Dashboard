@@ -206,3 +206,128 @@ def test_evening_job_does_not_run_the_full_sync(tmp_path: Path, monkeypatch) -> 
     )
     run_evening_refresh()
     assert called == [EVENING_SOURCE, "thumbs:20"]
+
+
+def test_second_page_keeps_the_original_boundary(tmp_path: Path, monkeypatch) -> None:
+    """Page two stays behind the original date, not the newest post from page one."""
+    _setup(tmp_path, monkeypatch)
+    with get_connection() as conn:
+        own = ensure_default_comparison_accounts(conn)
+        run = start_fetch_run(
+            conn,
+            trigger_source="seed",
+            measured_at="2026-08-01T12:00:00+00:00",
+            period_start="2026-08-01T12:00:00+00:00",
+            period_end="2026-08-01T12:00:00+00:00",
+        )
+        stored = upsert_comparison_post(
+            conn,
+            account_id=own.account_id,
+            external_id="known-post",
+            text="bekend",
+            permalink="https://instagram.com/p/known",
+            media_type="IMAGE",
+            media_product_type="FEED",
+            published_at="2026-08-01T12:00:00+00:00",
+            raw_json='{"id":"known-post"}',
+        )
+        upsert_post_measurement(
+            conn,
+            post_id=stored.row_id,
+            fetch_run_id=run,
+            measured_at="2026-08-01T12:00:00+00:00",
+            like_count=9,
+            comments_count=1,
+        )
+        finish_fetch_run(conn, run, status="completed")
+        conn.commit()
+
+    def _profile(client, host_id, username, *, own):
+        return {
+            "id": "17841400191455972" if own else f"id-{username}",
+            "username": username,
+            "name": username,
+            "followers_count": 11,
+            "media_count": 3,
+        }
+
+    def _media(client, host_id, username, *, own, cursor, watermark):
+        if username != "theartofliving.online":
+            return MediaPage([], None, True)
+        if cursor is None:
+            assert watermark is not None
+            assert watermark.isoformat().startswith("2026-08-01")
+            return MediaPage(
+                [
+                    {
+                        "id": "known-post",
+                        "timestamp": "2026-08-01T12:00:00+0000",
+                        "like_count": 40,
+                        "comments_count": 8,
+                        "caption": "nieuwe likes",
+                    },
+                    {
+                        "id": "page1-new",
+                        "timestamp": "2026-11-06T10:00:00+0000",
+                        "like_count": 2,
+                        "comments_count": 0,
+                        "caption": "pagina een",
+                    },
+                ],
+                "cursor-page-2",
+                False,
+            )
+        assert cursor == "cursor-page-2"
+        assert watermark is not None
+        assert watermark.isoformat().startswith("2026-08-01")
+        return MediaPage(
+            [
+                {
+                    "id": "page2-new",
+                    "timestamp": "2026-10-20T10:00:00+0000",
+                    "like_count": 5,
+                    "comments_count": 1,
+                    "caption": "pagina twee",
+                },
+                {
+                    "id": "too-old",
+                    "timestamp": "2026-07-01T10:00:00+0000",
+                    "like_count": 1,
+                    "comments_count": 0,
+                    "caption": "ouder dan de grens",
+                },
+            ],
+            "cursor-page-3",
+            True,
+        )
+
+    monkeypatch.setattr("sync.daily_update._load_profile", _profile)
+    monkeypatch.setattr("sync.daily_update._load_media_page", _media)
+
+    afternoon = run_daily_update(
+        trigger_source="schedule_afternoon_comparison", client=object(), now=NOW
+    )
+    assert afternoon.accounts[0].posts_fetched == 1
+    evening = run_daily_update(
+        trigger_source="schedule_evening_refresh",
+        client=object(),
+        now=NOW.replace(hour=19, minute=30),
+    )
+    own_pages = [item for item in evening.accounts if item.username == "theartofliving.online"]
+    assert own_pages[0].posts_fetched == 1
+    with get_connection() as conn:
+        ids = {
+            row["external_id"]
+            for row in conn.execute("SELECT external_id FROM posts").fetchall()
+        }
+        assert "page1-new" in ids
+        assert "page2-new" in ids
+        assert "too-old" not in ids
+        likes = conn.execute(
+            """
+            SELECT like_count FROM post_measurements
+            WHERE post_id = (SELECT id FROM posts WHERE external_id = 'known-post')
+            ORDER BY measured_at
+            """
+        ).fetchall()
+        assert [row["like_count"] for row in likes] == [9]

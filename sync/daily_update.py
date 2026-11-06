@@ -161,6 +161,23 @@ def daily_slot_complete(trigger_source: str, *, now: datetime | None = None) -> 
     return True
 
 
+def _open_scan(conn, username: str, *, day: str, trigger_source: str):
+    """Unfinished page cursor. Its original date stays the boundary."""
+    return conn.execute(
+        """
+        SELECT cursor_after, watermark_at
+        FROM daily_comparison_steps
+        WHERE username = ?
+          AND phase = 'posts'
+          AND cursor_after IS NOT NULL
+          AND NOT (amsterdam_day = ? AND trigger_source = ?)
+        ORDER BY updated_at DESC
+        LIMIT 1
+        """,
+        (username, day, trigger_source),
+    ).fetchone()
+
+
 def _watermark(conn, account_id: int | None) -> datetime | None:
     if account_id is None:
         return None
@@ -221,7 +238,11 @@ def _load_media_page(
 ) -> MediaPage:
     """One page. Code 1 retries the same page with a smaller limit."""
     if own:
-        since = int(watermark.timestamp()) if watermark is not None else None
+        # A follow-up page uses only the cursor. Sending `since` again would
+        # restart at the newest post and skip everything after page one.
+        since = None
+        if cursor is None and watermark is not None:
+            since = int(watermark.timestamp())
         posts, cursor_after = client.get_instagram_media_page(
             host_id,
             since=since,
@@ -441,10 +462,32 @@ def run_daily_update(
                             followers_count=followers,
                             media_count=media_count,
                         )
-                        watermark = _watermark(conn, account_id)
-                        watermark_at = (
-                            watermark.astimezone(timezone.utc).isoformat() if watermark else None
+                        carried = _open_scan(
+                            conn, username, day=day, trigger_source=trigger_source
                         )
+                        if carried is not None:
+                            cursor = str(carried["cursor_after"])
+                            watermark_at = (
+                                str(carried["watermark_at"]) if carried["watermark_at"] else None
+                            )
+                            conn.execute(
+                                """
+                                UPDATE daily_comparison_steps
+                                SET phase = 'done', cursor_after = NULL, updated_at = ?
+                                WHERE username = ?
+                                  AND phase = 'posts'
+                                  AND cursor_after IS NOT NULL
+                                  AND NOT (amsterdam_day = ? AND trigger_source = ?)
+                                """,
+                                (measured_at, username, day, trigger_source),
+                            )
+                        else:
+                            watermark = _watermark(conn, account_id)
+                            watermark_at = (
+                                watermark.astimezone(timezone.utc).isoformat()
+                                if watermark
+                                else None
+                            )
                         phase = "posts"
                         _save_step(
                             conn,
