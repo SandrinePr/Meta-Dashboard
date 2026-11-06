@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import logging
 import time
 from typing import Any
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import requests
 from tenacity import (
@@ -95,10 +96,34 @@ def format_meta_client_error(exc: MetaClientError) -> str:
     return str(exc)
 
 
+def is_reduce_data_error(exc: BaseException) -> bool:
+    """True when Graph asks for a smaller request (code 1), not a rate limit."""
+    if not isinstance(exc, MetaRequestError):
+        return False
+    if exc.error_code == 1:
+        return True
+    return "reduce the amount of data" in str(exc).lower()
+
+
+def _request_path(url: str) -> str:
+    """Path only. Query strings can carry the access token."""
+    return urlsplit(url).path or "/"
+
+
+def _url_with_limit(url: str, limit: int) -> str:
+    parts = urlsplit(url)
+    query = dict(parse_qsl(parts.query, keep_blank_values=True))
+    query["limit"] = str(limit)
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
+
+
 def _is_retryable_error(exc: BaseException) -> bool:
     if isinstance(exc, (requests.Timeout, requests.ConnectionError)):
         return True
     if isinstance(exc, MetaRequestError):
+        # A too-large request must shrink; repeating the same payload does not help.
+        if is_reduce_data_error(exc):
+            return False
         # Never retry application/rate limits — retries burn the remaining quota.
         if exc.is_rate_limited or is_rate_limit_error(
             error_code=exc.error_code,
@@ -251,15 +276,22 @@ class MetaClient:
             is_rate_limited=rate_limited,
             duration_ms=duration_ms,
         )
+        if meta_error.error_code == 100:
+            logger.warning(
+                "Meta-object pad=%s code 100; dit object faalt. message=%s",
+                _request_path(url),
+                str(meta_error),
+            )
         logger.warning(
             "Meta request failed status=%s code=%s rate_limited=%s "
-            "retry_after=%s usage=%s duration_ms=%.1f message=%s",
+            "retry_after=%s usage=%s duration_ms=%.1f path=%s message=%s",
             meta_error.status_code,
             meta_error.error_code,
             meta_error.is_rate_limited,
             meta_error.retry_after_seconds,
             meta_error.usage_headers,
             duration_ms,
+            _request_path(url),
             str(meta_error),
         )
         raise meta_error
@@ -322,9 +354,23 @@ class MetaClient:
         next_url: str | None = f"{self.base_url}/{endpoint.lstrip('/')}"
         current_params: dict[str, Any] | None = page_params
         records: list[dict[str, Any]] = []
+        limit = int(page_params.get("limit") or DEFAULT_LIMIT)
+        shrinks = 0
 
         while next_url:
-            payload, _meta = self._request_json(next_url, params=current_params)
+            try:
+                payload, _meta = self._request_json(next_url, params=current_params)
+            except MetaRequestError as exc:
+                if is_reduce_data_error(exc) and shrinks < 3 and limit > 5:
+                    limit = max(5, limit // 2)
+                    shrinks += 1
+                    logger.info("Meta code 1; kleinere pagina limit=%s", limit)
+                    if current_params is not None:
+                        current_params["limit"] = limit
+                    else:
+                        next_url = _url_with_limit(next_url, limit)
+                    continue
+                raise
             data = payload.get("data", [])
             if not isinstance(data, list):
                 raise MetaRequestError("Expected list payload in Graph API data field.")
@@ -394,6 +440,49 @@ class MetaClient:
 
         return self.get_paginated(f"{ig_id}/{MEDIA_EDGE}", params=params, use_page_token=True)
 
+    def get_instagram_media_page(
+        self,
+        instagram_business_account_id: str,
+        *,
+        since: int | None = None,
+        after: str | None = None,
+        limit: int = 25,
+    ) -> tuple[list[dict[str, Any]], str | None]:
+        """One media page. On code 1 the same page is requested with a smaller limit."""
+        ig_id = instagram_business_account_id.strip()
+        if not ig_id:
+            raise MetaConfigError("Missing instagram_business_account_id for media fetch.")
+        page_limit = limit
+        shrinks = 0
+        while True:
+            params: dict[str, Any] = {
+                "fields": as_fields_param(INSTAGRAM_MEDIA_FIELDS),
+                "limit": page_limit,
+            }
+            if since is not None:
+                params["since"] = since
+            if after:
+                params["after"] = after
+            try:
+                payload = self.get_json(f"{ig_id}/{MEDIA_EDGE}", params=params, use_page_token=True)
+                break
+            except MetaRequestError as exc:
+                if is_reduce_data_error(exc) and shrinks < 3 and page_limit > 5:
+                    page_limit = max(5, page_limit // 2)
+                    shrinks += 1
+                    logger.info("Meta code 1 op media; limit=%s", page_limit)
+                    continue
+                raise
+        data = payload.get("data", [])
+        posts = [item for item in data if isinstance(item, dict)] if isinstance(data, list) else []
+        paging = payload.get("paging") if isinstance(payload.get("paging"), dict) else {}
+        cursor = None
+        if isinstance(paging, dict) and paging.get("next"):
+            cursors = paging.get("cursors") if isinstance(paging.get("cursors"), dict) else {}
+            after_cursor = cursors.get("after") if isinstance(cursors, dict) else None
+            cursor = str(after_cursor) if after_cursor else None
+        return posts, cursor
+
     def get_instagram_media_insights(
         self,
         media_id: str,
@@ -404,13 +493,56 @@ class MetaClient:
         if not media_id.strip():
             raise MetaConfigError("media_id is required for Instagram insights fetch.")
 
+        media = media_id.strip()
         try:
             return self.get_json(
-                f"{media_id.strip()}/insights",
+                f"{media}/insights",
                 params={"metric": metrics},
                 use_page_token=True,
             )
         except MetaRequestError as primary_exc:
+            if primary_exc.error_code == 100:
+                logger.warning(
+                    "Meta-object %s code 100 bij insights; overige objecten gaan door.",
+                    media,
+                )
+                raise
+            if is_reduce_data_error(primary_exc):
+                logger.info("Insights code 1 voor media %s; metriek voor metriek.", media)
+                collected: list[dict[str, Any]] = []
+                for metric in [part.strip() for part in metrics.split(",") if part.strip()]:
+                    try:
+                        collected.append(
+                            self.get_json(
+                                f"{media}/insights",
+                                params={"metric": metric},
+                                use_page_token=True,
+                            )
+                        )
+                    except MetaRequestError as exc:
+                        if exc.error_code == 100:
+                            logger.warning(
+                                "Meta-object %s metric %s code 100; overige metrieken gaan door.",
+                                media,
+                                metric,
+                            )
+                            continue
+                        if is_reduce_data_error(exc):
+                            logger.info(
+                                "Insights code 1 blijft voor media %s metric %s.",
+                                media,
+                                metric,
+                            )
+                            continue
+                        raise
+                if collected:
+                    merged: list[Any] = []
+                    for part in collected:
+                        rows = part.get("data")
+                        if isinstance(rows, list):
+                            merged.extend(rows)
+                    return {"data": merged}
+                raise primary_exc
             # total_views is Facebook-Login-only; retry without it, then try impressions
             # for older feed posts created before the impressions deprecation window.
             fallbacks = (

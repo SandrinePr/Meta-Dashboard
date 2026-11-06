@@ -162,47 +162,52 @@ def run_growth_tick() -> None:
     run_growth_tick_once()
 
 
+def _updated_accounts(result) -> str:
+    names = [
+        item.username
+        for item in getattr(result, "accounts", [])
+        if getattr(item, "status", "") in {"success", "partial"}
+    ]
+    return ",".join(names) if names else "-"
+
+
 def run_afternoon_comparison() -> None:
-    from sync.comparison import run_comparison_sync
+    from sync.daily_update import daily_slot_complete, run_daily_update
 
     def _job() -> None:
-        if scheduled_job_ran_today(AFTERNOON_SOURCE):
-            logger.info("Afternoon comparison already ran today; skip.")
+        if daily_slot_complete(AFTERNOON_SOURCE):
+            logger.info("Afternoon comparison already finished today; skip.")
             return
-        result = run_comparison_sync(
-            trigger_source=AFTERNOON_SOURCE,
-            mode="full",
-            force=False,
-        )
+        result = run_daily_update(trigger_source=AFTERNOON_SOURCE)
         logger.info(
-            "Afternoon comparison status=%s run_id=%s",
+            "Afternoon comparison status=%s run_id=%s started=%s accounts=%s",
             result.status,
             result.run_id,
+            result.measured_at,
+            _updated_accounts(result),
         )
 
     _run_locked("afternoon_comparison", _job)
 
 
 def run_evening_refresh() -> None:
-    from sync.comparison import run_comparison_sync
-    from sync.orchestrator import run_sync
+    from sync.daily_update import daily_slot_complete, run_daily_update
     from sync.thumbnails import cache_missing_thumbnails
 
     def _job() -> None:
-        if scheduled_job_ran_today(EVENING_SOURCE):
-            logger.info("Evening refresh already ran today; skip.")
+        if daily_slot_complete(EVENING_SOURCE):
+            logger.info("Evening comparison already finished today; skip.")
             return
-        run_sync(platform="all")
-        result = run_comparison_sync(
-            trigger_source=EVENING_SOURCE,
-            mode="full",
-            force=True,
-        )
-        saved, skipped, failed = cache_missing_thumbnails(recent_first=True, limit=250)
+        result = run_daily_update(trigger_source=EVENING_SOURCE)
+        saved = skipped = failed = 0
+        if not result.rate_limited:
+            saved, skipped, failed = cache_missing_thumbnails(recent_first=True, limit=20)
         logger.info(
-            "Evening refresh status=%s run_id=%s thumbs saved=%s skipped=%s failed=%s",
+            "Evening comparison status=%s run_id=%s started=%s accounts=%s thumbs saved=%s skipped=%s failed=%s",
             result.status,
             result.run_id,
+            result.measured_at,
+            _updated_accounts(result),
             saved,
             skipped,
             failed,
@@ -211,29 +216,41 @@ def run_evening_refresh() -> None:
     _run_locked("evening_refresh", _job)
 
 
-def catch_up_missed_jobs() -> None:
-    """One due growth step first, then today's comparison slot if it has not run.
-
-    Afternoon and evening still share the Meta budget. They start only after
-    the growth step has claimed or deferred its own queue item.
-    """
+def resume_due_comparison() -> None:
+    """Continue today's open 13:30 or 20:30 slot. Does not open a slot early."""
     now = _amsterdam_now()
     minutes = now.hour * 60 + now.minute
     afternoon_at = 13 * 60 + 30
     evening_at = 20 * 60 + 30
+    if minutes >= evening_at:
+        run_evening_refresh()
+    elif minutes >= afternoon_at:
+        run_afternoon_comparison()
+
+
+def catch_up_missed_jobs() -> None:
+    """One due growth step first, then today's comparison slot if it is still open.
+
+    Afternoon and evening still share the Meta budget. They start only after
+    the growth step has claimed or deferred its own queue item.
+    """
     try:
         run_growth_tick()
     except Exception:
         logger.exception("Growth tick failed")
     try:
-        if minutes >= evening_at:
-            if not scheduled_job_ran_today(EVENING_SOURCE):
-                run_evening_refresh()
-        elif minutes >= afternoon_at:
-            if not scheduled_job_ran_today(AFTERNOON_SOURCE):
-                run_afternoon_comparison()
+        resume_due_comparison()
     except Exception:
         logger.exception("Scheduled catch-up failed")
+
+
+def run_interval_wake() -> None:
+    """Growth step first. An open daily slot resumes afterwards, one saved step at a time."""
+    run_growth_tick()
+    try:
+        resume_due_comparison()
+    except Exception:
+        logger.exception("Daily comparison resume failed")
 
 
 def start_scheduler() -> None:
@@ -263,7 +280,7 @@ def start_scheduler() -> None:
         # The old 07:30 morning_growth job is intentionally absent. Weekly
         # growth is one due step per wake. Afternoon and evening stay.
         scheduler.add_job(
-            run_growth_tick,
+            run_interval_wake,
             "interval",
             minutes=5,
             id="growth_cycle_tick",
@@ -291,7 +308,7 @@ def start_scheduler() -> None:
         _scheduler = scheduler
         logger.info(
             "Fetch scheduler started (growth queue every 5 min, 13:30 comparison, "
-            "20:30 full refresh, Europe/Amsterdam). Weekly growth opens Friday 00:00."
+            "20:30 comparison, Europe/Amsterdam). Weekly growth opens Friday 00:00."
         )
         threading.Thread(
             target=catch_up_missed_jobs,

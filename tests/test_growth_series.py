@@ -100,3 +100,74 @@ def test_daily_series_requires_real_start_no_shift(tmp_path: Path, monkeypatch) 
 def test_missing_start_constant() -> None:
     assert MISSING_START_MEASUREMENT == "Beginmeting ontbreekt"
     assert NO_SECOND_MEASUREMENT == "Nog geen tweede meting"
+
+
+def test_november_fetch_in_october_cycle_uses_the_real_moment(tmp_path: Path, monkeypatch) -> None:
+    """A 6 November fetch inside the open 30 October cycle is not drawn on 30 October."""
+    from analytics.week_growth import WeekMeasurement, describe_week_growth
+
+    _setup(tmp_path, monkeypatch)
+    measured = _utc(date(2026, 11, 6), 8)
+    with get_connection() as conn:
+        own = upsert_comparison_account(
+            conn,
+            external_id="ig-late",
+            username="own.late",
+            comparison_role=ROLE_OWN,
+            is_discovery_host=True,
+        )
+        run = start_fetch_run(
+            conn,
+            trigger_source="schedule_weekly_growth",
+            measured_at=measured,
+            period_start="2026-10-30T00:00:00+00:00",
+            period_end=measured,
+        )
+        upsert_account_measurement(
+            conn,
+            account_id=own,
+            fetch_run_id=run,
+            measured_at=measured,
+            followers_count=122943,
+            media_count=1,
+        )
+        conn.commit()
+
+    late = build_growth_series(
+        own_account_id=own,
+        competitor_usernames=[],
+        mode="daily",
+        day1=date(2026, 10, 30),
+        day2=date(2026, 11, 6),
+    )
+    assert late.series[0].points == []
+    assert late.series[0].chartable is False
+
+    on_the_day = build_growth_series(
+        own_account_id=own,
+        competitor_usernames=[],
+        mode="daily",
+        day1=date(2026, 11, 6),
+        day2=date(2026, 11, 6),
+    )
+    assert len(on_the_day.series[0].points) == 1
+    assert on_the_day.series[0].points[0].label == "06-11-2026"
+    assert on_the_day.series[0].points[0].followers == 122943
+    assert "30-10-2026" not in on_the_day.series[0].points[0].label
+
+    described = describe_week_growth(
+        [
+            WeekMeasurement(
+                measured_at="2026-10-23T10:00:00+00:00",
+                followers=100,
+                week_start="2026-10-23",
+            ),
+            WeekMeasurement(
+                measured_at=measured,
+                followers=122943,
+                week_start="2026-10-30",
+            ),
+        ]
+    )
+    assert "06-11-2026" in described.label
+    assert "30-10-2026" not in described.label

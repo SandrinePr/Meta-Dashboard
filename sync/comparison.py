@@ -182,17 +182,6 @@ def _store_media_batch(
     return touched, created
 
 
-def _count_unique_instagram_posts(conn, account_id: int) -> int:
-    row = conn.execute(
-        """
-        SELECT COUNT(*) AS c FROM posts
-        WHERE account_id = ? AND platform = 'instagram'
-        """,
-        (account_id,),
-    ).fetchone()
-    return int(row["c"] or 0)
-
-
 def _fetch_own_account(
     client: MetaClient,
     conn,
@@ -291,7 +280,7 @@ def _fetch_own_account(
         # Own media pagination via get_paginated already completes; treat as complete
         # when API returned data or account has zero posts in window.
         complete = True
-        summary.posts_fetched = _count_unique_instagram_posts(conn, account_id)
+        summary.posts_fetched = len(filtered)
         summary.is_complete = complete
         summary.oldest_post_at = to_utc_iso(oldest) if oldest else None
         summary.newest_post_at = to_utc_iso(newest) if newest else None
@@ -639,6 +628,7 @@ def _fetch_competitor(
                 account_payload = dict(known_account)
             record_follower_measurement = False
 
+        touched_total = 0
         for page in iter_discovery_media_pages(
             client,
             host.external_id,
@@ -705,8 +695,8 @@ def _fetch_competitor(
                 fetch_run_id=fetch_run_id,
                 measured_at=measured_at,
             )
-            # Unique Instagram IDs in DB — never inflate by re-upserts/overlaps.
-            posts_stored_total = _count_unique_instagram_posts(conn, summary.account_id)
+            touched_total += _touched
+            posts_stored_total = touched_total
             for post in page.posts_in_period:
                 external_id = str(post.get("id") or "").strip()
                 if external_id:
@@ -765,7 +755,7 @@ def _fetch_competitor(
         if summary.account_id is None:
             raise MetaRequestError(f"Geen Instagram-ID voor @{summary.username}.")
 
-        posts_stored_total = _count_unique_instagram_posts(conn, summary.account_id)
+        posts_stored_total = touched_total
         bounds = conn.execute(
             """
             SELECT MIN(published_at) AS mn, MAX(published_at) AS mx

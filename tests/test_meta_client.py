@@ -44,6 +44,77 @@ def test_get_paginated_follows_paging_next() -> None:
 
 
 @responses.activate
+def test_code_1_shrinks_the_page_instead_of_repeating_it() -> None:
+    client = _build_client()
+    responses.add(
+        responses.GET,
+        "https://graph.facebook.com/v25.0/me/accounts",
+        json={
+            "error": {
+                "message": "Please reduce the amount of data you're asking for, then retry your request",
+                "code": 1,
+            }
+        },
+        status=500,
+    )
+    responses.add(
+        responses.GET,
+        "https://graph.facebook.com/v25.0/me/accounts",
+        json={"data": [{"id": "kept"}]},
+        status=200,
+    )
+
+    records = client.get_paginated("me/accounts", params={"limit": 100})
+    assert records == [{"id": "kept"}]
+    assert len(responses.calls) == 2
+    assert responses.calls[1].request.params["limit"] == "50"
+
+
+@responses.activate
+def test_insights_code_100_names_the_object_and_code_1_splits_metrics() -> None:
+    client = _build_client()
+    responses.add(
+        responses.GET,
+        "https://graph.facebook.com/v25.0/media-9/insights",
+        json={"error": {"message": "Object with ID 'media-9' does not exist", "code": 100}},
+        status=400,
+    )
+    try:
+        client.get_instagram_media_insights("media-9", metrics="views,reach")
+    except MetaRequestError as exc:
+        assert exc.error_code == 100
+    else:
+        raise AssertionError("code 100 must surface for this object")
+    assert len(responses.calls) == 1
+
+    responses.add(
+        responses.GET,
+        "https://graph.facebook.com/v25.0/media-8/insights",
+        json={
+            "error": {
+                "message": "Please reduce the amount of data you're asking for, then retry your request",
+                "code": 1,
+            }
+        },
+        status=500,
+    )
+    responses.add(
+        responses.GET,
+        "https://graph.facebook.com/v25.0/media-8/insights",
+        json={"data": [{"name": "views", "values": [{"value": 4}]}]},
+        status=200,
+    )
+    responses.add(
+        responses.GET,
+        "https://graph.facebook.com/v25.0/media-8/insights",
+        json={"error": {"message": "Object with ID 'media-8' does not exist", "code": 100}},
+        status=400,
+    )
+    payload = client.get_instagram_media_insights("media-8", metrics="views,reach")
+    assert payload["data"][0]["name"] == "views"
+
+
+@responses.activate
 def test_retry_then_success_on_transient_server_error() -> None:
     client = _build_client()
 

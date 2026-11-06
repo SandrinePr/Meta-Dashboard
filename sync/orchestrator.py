@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+import logging
 from typing import Callable
 
 from config import get_settings
@@ -27,6 +28,18 @@ from sync.mappers import (
     normalize_instagram_post,
     parse_published_at,
 )
+
+logger = logging.getLogger(__name__)
+
+
+def _note_object_error(kind: str, object_id: str, exc: MetaClientError) -> None:
+    """Code 100 belongs to one object. The caller keeps going with the rest."""
+    if getattr(exc, "error_code", None) == 100 and object_id:
+        logger.warning(
+            "Meta-object %s code 100 bij %s; dit object wordt overgeslagen en de overige gaan door.",
+            object_id,
+            kind,
+        )
 
 # Content lookback (~18 months). Fast sync only does extra API calls for recent items.
 LOOKBACK_DAYS = 548
@@ -186,6 +199,7 @@ def sync_instagram(
                     raw_post = _apply_instagram_insight_defaults(raw_post)
                     stats.insights_ok += 1
                 except MetaClientError as exc:
+                    _note_object_error("instagram insights", media_id, exc)
                     if getattr(exc, "error_code", None) == 190:
                         insights_stopped = True
                         _append_meta_sync_error(
@@ -249,6 +263,7 @@ def sync_instagram(
             try:
                 raw_comments = client.get_instagram_comments(post_data["external_id"])
             except MetaClientError as exc:
+                _note_object_error("instagram comments", post_data["external_id"], exc)
                 _append_meta_sync_error(
                     stats,
                     f"Instagram comments voor media {post_data['external_id']} mislukt",
@@ -372,6 +387,7 @@ def sync_facebook(
                     raw_post = flatten_facebook_insights(raw_post, insights)
                     stats.insights_ok += 1
                 except MetaClientError as exc:
+                    _note_object_error("facebook insights", post_id, exc)
                     if getattr(exc, "error_code", None) == 190:
                         insights_stopped = True
                         _append_meta_sync_error(
@@ -435,6 +451,7 @@ def sync_facebook(
             try:
                 raw_comments = client.get_facebook_comments(post_data["external_id"])
             except MetaClientError as exc:
+                _note_object_error("facebook comments", post_data["external_id"], exc)
                 _append_meta_sync_error(
                     stats,
                     f"Facebook comments voor post {post_data['external_id']} mislukt",

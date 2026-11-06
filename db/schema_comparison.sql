@@ -217,6 +217,20 @@ CREATE TABLE IF NOT EXISTS durable_generation (
     generation INTEGER NOT NULL
 );
 
+-- Progress of one 13:30 or 20:30 comparison slot. History stays in the other tables.
+CREATE TABLE IF NOT EXISTS daily_comparison_steps (
+    amsterdam_day TEXT NOT NULL,
+    trigger_source TEXT NOT NULL,
+    username TEXT NOT NULL,
+    phase TEXT NOT NULL,
+    cursor_after TEXT,
+    watermark_at TEXT,
+    posts_stored INTEGER NOT NULL DEFAULT 0,
+    error_message TEXT,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (amsterdam_day, trigger_source, username)
+);
+
 -- One stored content description per post. Unchanged content is not sent again.
 CREATE TABLE IF NOT EXISTS content_descriptions (
     post_id INTEGER PRIMARY KEY,

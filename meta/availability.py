@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 
 from meta.client import MetaClient, MetaClientError, MetaRequestError, format_meta_client_error
+
+logger = logging.getLogger(__name__)
 
 _UNAVAILABLE_PHRASES = (
     "does not exist",
@@ -84,6 +87,11 @@ def mark_unavailable_posts(
         try:
             client.get_json(row["external_id"], params={"fields": "id"})
         except MetaClientError as exc:
+            if getattr(exc, "error_code", None) == 100:
+                logger.warning(
+                    "Meta-object %s code 100; dit object wordt overgeslagen en de overige gaan door.",
+                    row["external_id"],
+                )
             if getattr(exc, "error_code", None) == 190:
                 break
             if is_unavailable_meta_error(exc):
