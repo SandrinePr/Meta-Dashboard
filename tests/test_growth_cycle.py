@@ -20,6 +20,7 @@ from db.comparison_repository import (
     start_fetch_run,
     upsert_account_measurement,
     upsert_comparison_account,
+    upsert_comparison_post,
 )
 from db.database import get_connection, initialize_database
 from meta.client import MetaRequestError
@@ -72,7 +73,7 @@ def _setup(tmp_path: Path, monkeypatch) -> None:
 def _friday() -> datetime:
     start = friday_start(date(2026, 11, 6))
     assert start.weekday() == 4
-    assert start.hour == 0
+    assert start.hour == 1
     return start
 
 
@@ -124,8 +125,8 @@ def test_friday_midnight_follows_amsterdam_dst() -> None:
     assert summer.weekday() == 4
     assert winter.utcoffset() == timedelta(hours=1)
     assert summer.utcoffset() == timedelta(hours=2)
-    assert winter.astimezone(timezone.utc) == datetime(2026, 1, 15, 23, 0, tzinfo=timezone.utc)
-    assert summer.astimezone(timezone.utc) == datetime(2026, 7, 2, 22, 0, tzinfo=timezone.utc)
+    assert winter.astimezone(timezone.utc) == datetime(2026, 1, 16, 0, 0, tzinfo=timezone.utc)
+    assert summer.astimezone(timezone.utc) == datetime(2026, 7, 2, 23, 0, tzinfo=timezone.utc)
 
 
 def test_progress_lists_last_measurement_before_a_cycle(
@@ -525,8 +526,17 @@ def test_missed_friday_creates_exactly_one_cycle(tmp_path: Path, monkeypatch) ->
         conn.execute("UPDATE growth_cycle_accounts SET status = 'complete', step = 'stored'")
         conn.execute("UPDATE growth_cycles SET status = 'complete', next_run_at = NULL")
         conn.commit()
-    opened = tick_growth_cycle(now=friday_night, fetcher=script)
-    again = tick_growth_cycle(now=friday_night, fetcher=script)
+    still_closed = tick_growth_cycle(now=friday_night, fetcher=script)
+    assert still_closed.action == "idle"
+    with get_connection() as conn:
+        weeks = [
+            row["week_start"]
+            for row in conn.execute("SELECT week_start FROM growth_cycles ORDER BY id")
+        ]
+    assert weeks == ["2026-10-30"]
+    friday_morning = datetime(2026, 11, 6, 1, 0, tzinfo=AMSTERDAM)
+    opened = tick_growth_cycle(now=friday_morning, fetcher=script)
+    again = tick_growth_cycle(now=friday_morning, fetcher=script)
     assert opened.action == "stored"
     assert again.action == "wait"
     with get_connection() as conn:
@@ -609,3 +619,152 @@ def test_post_rate_limit_resumes_the_same_step(tmp_path: Path, monkeypatch) -> N
     done = tick_growth_cycle(now=start + timedelta(hours=4), fetcher=fetcher)
     assert done.action == "stored"
     assert done.username == "theartofliving.online"
+
+
+def test_second_page_does_not_block_the_next_account(tmp_path: Path, monkeypatch) -> None:
+    _setup(tmp_path, monkeypatch)
+    calls: list[tuple[str, str, str | None]] = []
+
+    def fetcher(target: GrowthTarget):
+        calls.append((target.username, target.step, target.cursor_after))
+        if target.step == "followers":
+            return GrowthProfile(followers_count=10)
+        return GrowthStepResult(
+            posts=(
+                GrowthMediaItem(
+                    f"recent-{target.username}",
+                    1,
+                    1,
+                    "2026-11-06T00:30:00+00:00",
+                ),
+            ),
+            cursor_after="page-2",
+        )
+
+    start = _friday()
+    tick_growth_cycle(now=start, fetcher=fetcher)
+    page = tick_growth_cycle(now=start + timedelta(hours=1), fetcher=fetcher)
+    assert page.username == "theartofliving.online"
+    assert calls[-1][1] == "posts"
+    nxt = tick_growth_cycle(now=start + timedelta(hours=2), fetcher=fetcher)
+    assert nxt.username == COMPETITORS[0]
+    assert calls[-1] == (COMPETITORS[0], "followers", None)
+    assert all(call[2] != "page-2" for call in calls)
+
+
+def test_page_older_than_a_week_stops_the_walk(tmp_path: Path, monkeypatch) -> None:
+    _setup(tmp_path, monkeypatch)
+    calls: list[tuple[str, str]] = []
+
+    def fetcher(target: GrowthTarget):
+        calls.append((target.username, target.step))
+        if target.step == "followers":
+            return GrowthProfile(followers_count=10)
+        return GrowthStepResult(
+            posts=(GrowthMediaItem("old-post", 1, 1, "2026-05-22T00:00:00+00:00"),),
+            cursor_after="older-page",
+        )
+
+    start = _friday()
+    tick_growth_cycle(now=start, fetcher=fetcher)
+    page = tick_growth_cycle(now=start + timedelta(hours=1), fetcher=fetcher)
+    assert page.username == "theartofliving.online"
+    with get_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT status, cursor_after
+            FROM growth_cycle_accounts
+            WHERE username = 'theartofliving.online'
+            """
+        ).fetchone()
+    assert row["status"] == "complete"
+    assert row["cursor_after"] is None
+    nxt = tick_growth_cycle(now=start + timedelta(hours=2), fetcher=fetcher)
+    assert nxt.username == COMPETITORS[0]
+    assert calls[-1] == (COMPETITORS[0], "followers")
+    assert calls.count(("theartofliving.online", "posts")) == 1
+
+
+def test_current_friday_opens_while_october_cycle_is_still_paging(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _setup(tmp_path, monkeypatch)
+    script = _Script({})
+    thursday = datetime(2026, 11, 5, 10, 0, tzinfo=AMSTERDAM)
+    tick_growth_cycle(now=thursday, fetcher=script)
+    before = _measurements()
+    assert len(before) == 1
+    with get_connection() as conn:
+        account = conn.execute(
+            """
+            SELECT id, account_id, measurement_id
+            FROM growth_cycle_accounts
+            WHERE username = 'theartofliving.online'
+            """
+        ).fetchone()
+        run = conn.execute(
+            "SELECT fetch_run_id FROM account_measurements WHERE id = ?",
+            (int(account["measurement_id"]),),
+        ).fetchone()
+        saved = upsert_comparison_post(
+            conn,
+            account_id=int(account["account_id"]),
+            external_id="old-may",
+            text=None,
+            permalink=None,
+            media_type="IMAGE",
+            media_product_type=None,
+            published_at="2026-05-22T00:00:00+00:00",
+            raw_json=None,
+        )
+        conn.execute(
+            """
+            INSERT INTO post_measurements (
+                post_id, fetch_run_id, measured_at, like_count, comments_count
+            ) VALUES (?, ?, ?, 1, 1)
+            """,
+            (saved.row_id, int(run["fetch_run_id"]), "2026-11-05T09:00:00+00:00"),
+        )
+        conn.execute(
+            """
+            UPDATE growth_cycle_accounts
+            SET step = 'posts', status = 'waiting', cursor_after = 'may-page'
+            WHERE id = ?
+            """,
+            (int(account["id"]),),
+        )
+        conn.commit()
+
+    friday = datetime(2026, 11, 6, 1, 0, tzinfo=AMSTERDAM)
+    closed = tick_growth_cycle(now=friday, fetcher=script)
+    assert closed.action == "local"
+    assert script.calls == ["theartofliving.online"]
+    assert _measurements() == before
+    with get_connection() as conn:
+        weeks = [
+            row["week_start"]
+            for row in conn.execute("SELECT week_start FROM growth_cycles ORDER BY id")
+        ]
+        old = conn.execute(
+            """
+            SELECT a.status, a.cursor_after
+            FROM growth_cycle_accounts a
+            JOIN growth_cycles c ON c.id = a.cycle_id
+            WHERE c.week_start = '2026-10-30' AND a.username = 'theartofliving.online'
+            """
+        ).fetchone()
+    assert weeks == ["2026-10-30", "2026-11-06"]
+    assert old["status"] == "complete"
+    assert old["cursor_after"] is None
+
+    opened = tick_growth_cycle(now=friday, fetcher=script)
+    assert opened.action == "stored"
+    assert opened.username == "theartofliving.online"
+    assert script.steps == ["followers", "followers"]
+    stored = _measurements()
+    assert len(stored) == 2
+    assert stored[0] == before[0]
+    assert stored[1][2] != stored[0][2]
+    held = tick_growth_cycle(now=friday, fetcher=script)
+    assert held.action == "wait"
+    assert script.calls == ["theartofliving.online", "theartofliving.online"]

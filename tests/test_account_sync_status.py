@@ -29,7 +29,10 @@ def test_column_stays_pending_until_the_cycle_is_complete(tmp_path: Path, monkey
         )
         after_followers = load_account_sync_states(conn, [account_id])[account_id]
     assert after_followers.kind == "pending"
-    assert _last_update_cell(after_followers) == LABEL_PENDING
+    pending = _last_update_cell(after_followers)
+    assert LABEL_PENDING in pending
+    assert "postpagina ophalen" in pending
+    assert "06-11-2026 02:00" in pending
 
     finished = start + timedelta(hours=1)
     tick_growth_cycle(now=finished, fetcher=script)
@@ -37,7 +40,7 @@ def test_column_stays_pending_until_the_cycle_is_complete(tmp_path: Path, monkey
         state = load_account_sync_states(conn, [account_id])[account_id]
     assert state.kind == "stored"
     assert state.measured_at is not None
-    assert _last_update_cell(state) == "06-11-2026 01:00"
+    assert _last_update_cell(state) == "06-11-2026 02:00"
 
 
 def test_rate_limit_is_pending_and_a_permanent_error_is_failed(tmp_path: Path, monkeypatch) -> None:
@@ -69,7 +72,11 @@ def test_rate_limit_is_pending_and_a_permanent_error_is_failed(tmp_path: Path, m
         )
         own = load_account_sync_states(conn, [own_id])[own_id]
     assert own.kind == "pending"
-    assert _last_update_cell(own) == LABEL_PENDING
+    pending = _last_update_cell(own)
+    assert LABEL_PENDING in pending
+    assert "Meta-limiet" in pending
+    assert "volgers ophalen" in pending
+    assert "06-11-2026 04:00" in pending
 
     tick_growth_cycle(now=start + timedelta(hours=3), fetcher=script)
     tick_growth_cycle(now=start + timedelta(hours=4), fetcher=script)

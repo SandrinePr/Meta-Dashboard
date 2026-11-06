@@ -308,7 +308,7 @@ def start_scheduler() -> None:
         _scheduler = scheduler
         logger.info(
             "Fetch scheduler started (growth queue every 5 min, 13:30 comparison, "
-            "20:30 comparison, Europe/Amsterdam). Weekly growth opens Friday 00:00."
+            "20:30 comparison, Europe/Amsterdam). Weekly growth opens Friday 01:00."
         )
         threading.Thread(
             target=catch_up_missed_jobs,

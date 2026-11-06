@@ -853,10 +853,13 @@ def _render_top_block(
 
 def _last_update_cell(state) -> str:
     """Date when the full comparison set is stored; otherwise the current state."""
-    from analytics.account_sync_status import LABEL_FAILED, LABEL_PENDING
+    from analytics.account_sync_status import LABEL_FAILED, LABEL_PENDING, pending_title
 
     if state is None or state.kind == "pending":
-        return LABEL_PENDING
+        title = pending_title(state)
+        return (
+            f"<span title=\"{html.escape(title, quote=True)}\">{LABEL_PENDING}</span>"
+        )
     if state.kind == "failed":
         reason = (state.error_message or "Ophalen mislukt").replace("\r", " ").replace("\n", " ")
         return (

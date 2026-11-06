@@ -1,9 +1,9 @@
 """Weekly comparison queue.
 
-One stored step per due time: followers, then one page of posts with likes and
-comments. The wait lives in ``next_run_at``; this module never sleeps. A step
-that is already stored is not requested again. A Meta rate limit waits and
-resumes the same step.
+One stored step per due time: followers, then one page of posts from the last
+7 days. The wait lives in ``next_run_at``; this module never sleeps. A long
+page walk does not keep the other accounts waiting. A Meta rate limit waits
+and resumes the same step.
 """
 
 from __future__ import annotations
@@ -54,6 +54,7 @@ logger = logging.getLogger(__name__)
 AMSTERDAM = ZoneInfo("Europe/Amsterdam")
 TRIGGER_SOURCE = "schedule_weekly_growth"
 MIN_GAP = timedelta(hours=1)
+WEEK_POST_WINDOW = timedelta(days=7)
 MAX_ATTEMPTS = 3
 STALE_RUNNING = timedelta(minutes=15)
 # Permission / token / missing object. Retrying spends the shared app budget.
@@ -165,8 +166,8 @@ def week_friday(now: datetime) -> date:
 
 
 def friday_start(day: date) -> datetime:
-    """Friday 00:00 Europe/Amsterdam, including the DST offset of that date."""
-    return datetime(day.year, day.month, day.day, tzinfo=AMSTERDAM)
+    """Friday 01:00 Europe/Amsterdam, including the DST offset of that date."""
+    return datetime(day.year, day.month, day.day, 1, tzinfo=AMSTERDAM)
 
 
 def _as_amsterdam(now: datetime) -> datetime:
@@ -328,14 +329,12 @@ def _tick_locked(conn: sqlite3.Connection, now: datetime, fetcher: Fetcher) -> T
     if _fresh_running(conn, now):
         return TickResult(action="duplicate")
 
-    cycle = _runnable_cycle(conn)
-    if cycle is None:
-        friday = week_friday(now)
-        if _cycle_for_week(conn, friday) is None and now >= friday_start(friday):
-            cycle_id = _create_cycle(conn, friday, now)
-            cycle = _cycle_row(conn, cycle_id)
-        else:
-            return TickResult(action="idle")
+    _ensure_current_friday(conn, now)
+    closed = _close_one_finished_walk(conn, now)
+    if closed is not None:
+        return closed
+
+    cycle = _preferred_cycle(conn, now)
     if cycle is None:
         return TickResult(action="idle")
 
@@ -345,6 +344,13 @@ def _tick_locked(conn: sqlite3.Connection, now: datetime, fetcher: Fetcher) -> T
         return TickResult(action="idle")
     if not _due(cycle["next_run_at"], now):
         return TickResult(action="wait", cycle_id=int(cycle["id"]))
+    blocked = _rate_limit_until(conn, now)
+    if blocked is not None and blocked > now:
+        return TickResult(
+            action="wait",
+            cycle_id=int(cycle["id"]),
+            detail=RATE_LIMIT_USER_MESSAGE,
+        )
 
     accounts = _account_rows(conn, int(cycle["id"]))
     repaired = _repair_stored(conn, accounts, now)
@@ -361,8 +367,8 @@ def _tick_locked(conn: sqlite3.Connection, now: datetime, fetcher: Fetcher) -> T
         )
         return TickResult(action="local", cycle_id=int(cycle["id"]), username=str(repaired["username"]))
     accounts = _account_rows(conn, int(cycle["id"]))
-    # Skip accounts whose follower count is already stored. One call for the rest.
-    target = _next_fetch_target(conn, accounts)
+    # One call. A page walk yields to an account that still needs its first step.
+    target = _next_fetch_target(conn, accounts, now)
     if target is None:
         _refresh_cycle_status(conn, int(cycle["id"]), now)
         return TickResult(action="idle", cycle_id=int(cycle["id"]))
@@ -376,6 +382,105 @@ def _tick_locked(conn: sqlite3.Connection, now: datetime, fetcher: Fetcher) -> T
         (int(target["id"]),),
     ).fetchone()
     return _fetch_account(conn, cycle, fresh, now, fetcher)
+
+
+def _ensure_current_friday(conn, now: datetime) -> None:
+    """Open today's Friday cycle even when an older cycle is still incomplete."""
+    friday = week_friday(now)
+    if now < friday_start(friday):
+        return
+    if _cycle_for_week(conn, friday) is not None:
+        return
+    cycle_id = _create_cycle(conn, friday, now)
+    older = conn.execute(
+        """
+        SELECT next_run_at
+        FROM growth_cycles
+        WHERE week_start < ?
+          AND status IN ('open', 'incomplete')
+        ORDER BY week_start DESC, id DESC
+        LIMIT 1
+        """,
+        (friday.isoformat(),),
+    ).fetchone()
+    if older is None or not older["next_run_at"]:
+        return
+    if _due(str(older["next_run_at"]), now):
+        return
+    hold = str(older["next_run_at"])
+    conn.execute(
+        """
+        UPDATE growth_cycles
+        SET next_run_at = ?, updated_at = ?
+        WHERE id = ?
+        """,
+        (hold, _iso(now), cycle_id),
+    )
+    conn.execute(
+        """
+        UPDATE growth_cycle_accounts
+        SET next_run_at = ?, updated_at = ?
+        WHERE cycle_id = ? AND position = 0 AND status = 'waiting'
+        """,
+        (hold, _iso(now), cycle_id),
+    )
+
+
+def _preferred_cycle(conn, now: datetime) -> sqlite3.Row | None:
+    friday = week_friday(now)
+    if now >= friday_start(friday):
+        current = _cycle_for_week(conn, friday)
+        if current is not None and _cycle_has_open_work(conn, int(current["id"])):
+            return current
+    return _runnable_cycle(conn)
+
+
+def _cycle_has_open_work(conn, cycle_id: int) -> bool:
+    row = conn.execute(
+        """
+        SELECT 1
+        FROM growth_cycle_accounts
+        WHERE cycle_id = ?
+          AND status IN ('waiting', 'waiting_api', 'running')
+        LIMIT 1
+        """,
+        (cycle_id,),
+    ).fetchone()
+    return row is not None
+
+
+def _close_one_finished_walk(conn, now: datetime) -> TickResult | None:
+    """Stop a page walk that is already older than the week window. No API call."""
+    rows = conn.execute(
+        """
+        SELECT a.*
+        FROM growth_cycle_accounts a
+        JOIN growth_cycles c ON c.id = a.cycle_id
+        WHERE a.status IN ('waiting', 'waiting_api')
+          AND a.step IN ('posts', 'engagement')
+          AND a.cursor_after IS NOT NULL
+          AND a.cursor_after != ''
+        ORDER BY c.week_start ASC, a.position ASC, a.id ASC
+        """
+    ).fetchall()
+    for account in rows:
+        if not _posts_already_past_window(conn, account, now):
+            continue
+        cycle_id = int(account["cycle_id"])
+        _finish_account(
+            conn,
+            account,
+            cycle_id,
+            now,
+            pause=timedelta(0),
+            schedule=not _newer_week_not_started(conn, account, now),
+        )
+        logger.info(
+            "Postpagina's ouder dan 7 dagen, @%s stopt zonder nieuwe aanvraag.",
+            account["username"],
+        )
+        return TickResult(action="local", cycle_id=cycle_id, username=str(account["username"]))
+    return None
 
 
 def _step_name(value: str | None) -> str:
@@ -490,7 +595,7 @@ def _store_posts(conn, account, cycle_id: int, now: datetime, outcome: GrowthSte
     ).fetchone()
     if _posts_missing_engagement(conn, run_id):
         return _retry_same_page(conn, fresh, cycle_id, now, "Likes of reacties ontbreken nog.")
-    if outcome.cursor_after:
+    if outcome.cursor_after and outcome.posts and not _page_crossed_window(outcome.posts, now):
         _pause_account(
             conn,
             fresh,
@@ -503,7 +608,7 @@ def _store_posts(conn, account, cycle_id: int, now: datetime, outcome: GrowthSte
         logger.info("Postpagina opgeslagen @%s, volgende pagina volgt.", username)
         return TickResult(action="stored", cycle_id=cycle_id, username=username)
     _finish_account(conn, fresh, cycle_id, now)
-    logger.info("Cyclus compleet @%s", username)
+    logger.info("Weekmeting compleet @%s", username)
     return TickResult(action="stored", cycle_id=cycle_id, username=username)
 
 
@@ -712,7 +817,15 @@ def _pause_account(
     _refresh_cycle_status(conn, int(account["cycle_id"]), now)
 
 
-def _finish_account(conn, account, cycle_id: int, now: datetime) -> None:
+def _finish_account(
+    conn,
+    account,
+    cycle_id: int,
+    now: datetime,
+    *,
+    pause: timedelta = MIN_GAP,
+    schedule: bool = True,
+) -> None:
     conn.execute(
         """
         UPDATE growth_cycle_accounts
@@ -723,7 +836,7 @@ def _finish_account(conn, account, cycle_id: int, now: datetime) -> None:
             next_run_at = NULL,
             cursor_after = NULL,
             measured_at = ?,
-            last_success_measured_at = ?,
+            last_success_measured_at = COALESCE(last_success_measured_at, ?),
             updated_at = ?
         WHERE id = ?
         """,
@@ -738,7 +851,16 @@ def _finish_account(conn, account, cycle_id: int, now: datetime) -> None:
             """,
             (_iso(now), int(account["account_id"])),
         )
-    _schedule_after(conn, cycle_id, int(account["position"]), now + MIN_GAP, now)
+    if schedule:
+        when = now + pause
+        if pause == timedelta(0):
+            cycle = _cycle_row(conn, cycle_id)
+            current = _parse(cycle["next_run_at"]) if cycle is not None and cycle["next_run_at"] else None
+            if current is not None and current > when:
+                when = current
+        _schedule_after(conn, cycle_id, int(account["position"]), when, now)
+    else:
+        _refresh_cycle_status(conn, cycle_id, now)
 
 
 def _retry_same_page(conn, account, cycle_id: int, now: datetime, message: str) -> TickResult:
@@ -1074,19 +1196,154 @@ def _account_rows(conn, cycle_id: int) -> list[sqlite3.Row]:
     )
 
 
-def _next_fetch_target(conn, accounts: list[sqlite3.Row]) -> sqlite3.Row | None:
-    """First account that still has a step to store.
+def _next_fetch_target(conn, accounts: list[sqlite3.Row], now: datetime) -> sqlite3.Row | None:
+    """Next account for one API step.
 
-    A permanently failed account does not block the rest. Stored steps stay
-    put: a follower row does not make the posts step skip the account.
+    A page that still has a cursor yields to an account that has not started,
+    so one long walk cannot hold the other accounts all day. A permanently
+    failed account does not block the rest.
     """
+    pending: list[sqlite3.Row] = []
     for account in accounts:
         if account["status"] in {"error", "complete"}:
             continue
         if _step_name(account["step"]) == STEP_STORED:
             continue
-        return account
-    return None
+        if _covered_by_newer_cycle(conn, account):
+            continue
+        if _held_for_new_friday(conn, account, now):
+            continue
+        pending.append(account)
+    if not pending:
+        return None
+    due = [account for account in pending if _account_due(account, now)]
+    pool = due or pending
+    if due:
+        starters = [account for account in due if not _is_paging(account)]
+        if starters:
+            return starters[0]
+    return pool[0]
+
+
+def _account_due(account, now: datetime) -> bool:
+    if account["next_run_at"] is None:
+        return True
+    return _due(str(account["next_run_at"]), now)
+
+
+def _is_paging(account) -> bool:
+    return _step_name(account["step"]) == STEP_POSTS and bool(account["cursor_after"])
+
+
+def _covered_by_newer_cycle(conn, account) -> bool:
+    row = conn.execute(
+        """
+        SELECT 1
+        FROM growth_cycle_accounts newer
+        JOIN growth_cycles newer_cycle ON newer_cycle.id = newer.cycle_id
+        JOIN growth_cycles older_cycle ON older_cycle.id = ?
+        WHERE lower(newer.username) = lower(?)
+          AND newer_cycle.week_start > older_cycle.week_start
+        LIMIT 1
+        """,
+        (int(account["cycle_id"]), account["username"]),
+    ).fetchone()
+    return row is not None
+
+
+def _held_for_new_friday(conn, account, now: datetime) -> bool:
+    """Do not start a new old-cycle account in the hour before Friday 01:00."""
+    friday = week_friday(now)
+    if now >= friday_start(friday):
+        return False
+    cycle = _cycle_row(conn, int(account["cycle_id"]))
+    if cycle is None:
+        return False
+    if date.fromisoformat(str(cycle["week_start"])) >= friday:
+        return False
+    if account["measurement_id"] is not None or account["cursor_after"]:
+        return False
+    return True
+
+
+def _week_cutoff(now: datetime) -> datetime:
+    return _as_amsterdam(now) - WEEK_POST_WINDOW
+
+
+def _published(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    text = str(value).strip().replace("Z", "+00:00")
+    if len(text) >= 5 and text[-5] in "+-" and ":" not in text[-5:]:
+        text = f"{text[:-2]}:{text[-2:]}"
+    return _parse(text)
+
+
+def _page_crossed_window(posts: tuple[GrowthMediaItem, ...], now: datetime) -> bool:
+    cutoff = _week_cutoff(now)
+    for post in posts:
+        published = _published(post.published_at)
+        if published is not None and published < cutoff:
+            return True
+    return False
+
+
+def _posts_already_past_window(conn, account, now: datetime) -> bool:
+    run_id = _cycle_run_id(conn, account)
+    if run_id is None:
+        return False
+    latest = conn.execute(
+        """
+        SELECT MAX(measured_at) AS measured_at
+        FROM post_measurements
+        WHERE fetch_run_id = ?
+        """,
+        (run_id,),
+    ).fetchone()
+    if latest is None or not latest["measured_at"]:
+        return False
+    rows = conn.execute(
+        """
+        SELECT p.published_at
+        FROM post_measurements pm
+        JOIN posts p ON p.id = pm.post_id
+        WHERE pm.fetch_run_id = ?
+          AND pm.measured_at = ?
+        """,
+        (run_id, latest["measured_at"]),
+    ).fetchall()
+    cutoff = _week_cutoff(now)
+    newest: datetime | None = None
+    for row in rows:
+        published = _published(row["published_at"])
+        if published is None:
+            continue
+        if newest is None or published > newest:
+            newest = published
+    return newest is not None and newest < cutoff
+
+
+def _newer_week_not_started(conn, account, now: datetime) -> bool:
+    cycle = _cycle_row(conn, int(account["cycle_id"]))
+    if cycle is None:
+        return False
+    current = week_friday(now)
+    week = date.fromisoformat(str(cycle["week_start"]))
+    if current <= week:
+        return False
+    return _cycle_for_week(conn, current) is None
+
+
+def _remaining_api_steps(accounts: list[sqlite3.Row]) -> int:
+    steps = 0
+    for account in accounts:
+        if str(account["status"]) in {"complete", "error"}:
+            continue
+        if _step_name(account["step"]) == STEP_FOLLOWERS:
+            steps += 2
+        elif _step_name(account["step"]) == STEP_POSTS:
+            steps += 1
+    return steps
 
 
 def _claim(conn, account_row_id: int, now: datetime) -> bool:
@@ -1243,7 +1500,7 @@ def _progress(conn, now: datetime) -> GrowthProgress:
         if now < upcoming:
             next_run = _iso(upcoming)
             message = (
-                "Er is nog geen weekcyclus. De volgende start is vrijdag om 00:00 "
+                "Er is nog geen weekcyclus. De volgende start is vrijdag om 01:00 "
                 "(Europa/Amsterdam)."
             )
         else:
@@ -1327,6 +1584,7 @@ def _progress(conn, now: datetime) -> GrowthProgress:
 
     complete = sum(1 for row in progress_rows if row.status == "complete")
     stale = newest is None or (now - newest) > timedelta(days=8)
+    remaining = _remaining_api_steps(accounts)
     message = _progress_message(
         week_start=str(cycle["week_start"]),
         cycle_status=str(cycle["status"]),
@@ -1335,6 +1593,7 @@ def _progress(conn, now: datetime) -> GrowthProgress:
         next_run_at=cycle["next_run_at"],
         stale=stale,
         newest=newest,
+        remaining_steps=remaining,
     )
     return GrowthProgress(
         week_start=str(cycle["week_start"]),
@@ -1473,6 +1732,7 @@ def _progress_message(
     next_run_at: str | None,
     stale: bool,
     newest: datetime | None,
+    remaining_steps: int = 0,
 ) -> str:
     parts: list[str] = []
     if stale:
@@ -1493,6 +1753,14 @@ def _progress_message(
         parts.append(f"Weekcyclus {week_start}: {complete} van {total} accounts compleet.")
     elif cycle_status == "complete":
         parts.append(f"Weekcyclus {week_start} is compleet ({complete} van {total}).")
+    if remaining_steps and cycle_status in {"open", "incomplete"}:
+        parts.append(f"Nog {remaining_steps} stappen, één per uur.")
+        moment = _parse(next_run_at) if next_run_at else None
+        if moment is not None and _finish_after_evening(moment, remaining_steps):
+            parts.append(
+                "Afronding voor 20:30 lukt zo niet. "
+                "De ophaling wacht op de volgende poging; gemiste uren worden niet ingehaald."
+            )
     if next_run_at and cycle_status in {"open", "incomplete"}:
         moment = _parse(next_run_at)
         if moment is not None:
@@ -1502,3 +1770,10 @@ def _progress_message(
                 + "."
             )
     return " ".join(parts)
+
+
+def _finish_after_evening(start: datetime, steps: int) -> bool:
+    local = start.astimezone(AMSTERDAM)
+    last = local + timedelta(hours=max(steps - 1, 0))
+    evening = local.replace(hour=20, minute=30, second=0, microsecond=0)
+    return last > evening
