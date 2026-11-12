@@ -169,3 +169,64 @@ def test_second_instance_cannot_overwrite_newer_snapshot(env, tmp_path: Path) ->
         publish_database(stale, store, holder="inst-b", now=moment + timedelta(minutes=30))
     assert store.pointer.version == newest.version
     assert store.pointer.sha256 == newest.sha256
+
+
+def test_daily_comparison_waiting_on_meta_limit_does_not_upload(tmp_path: Path, monkeypatch) -> None:
+    """13:30/20:30 slot resumes every 5 minutes. While Meta's limit is active
+    nothing changes, so the snapshot must stay as it is."""
+    from meta.client import MetaRequestError
+    from sync.daily_update import MediaPage, run_daily_update
+    from tests.test_daily_update import NOW
+    from tests.test_daily_update import _setup as daily_setup
+
+    daily_setup(tmp_path, monkeypatch)
+    path = tmp_path / "daily_update.db"
+
+    def _profile(client, host_id, username, *, own):
+        if not own:
+            raise MetaRequestError("limit", error_code=4, is_rate_limited=True)
+        return {"id": "17841400191455972", "username": username, "name": username,
+                "followers_count": 20, "media_count": 2}
+
+    monkeypatch.setattr("sync.daily_update._load_profile", _profile)
+    monkeypatch.setattr(
+        "sync.daily_update._load_media_page",
+        lambda *a, **k: MediaPage([], None, True),
+    )
+    first = run_daily_update(trigger_source="schedule_afternoon_comparison", client=object(), now=NOW)
+    assert first.rate_limited is True
+
+    store = CountingStore()
+    publish_database(path, store, holder="inst-a", now=NOW)
+    store.uploads = 0
+    for minutes in (5, 10, 15):
+        result = run_daily_update(
+            trigger_source="schedule_afternoon_comparison",
+            client=object(),
+            now=NOW + timedelta(minutes=minutes),
+        )
+        assert result.status == "skipped"
+        publish_database(path, store, holder="inst-a", now=NOW + timedelta(minutes=minutes))
+    assert store.uploads == 0
+
+
+def test_comparison_account_changes_are_still_saved(tmp_path: Path, monkeypatch) -> None:
+    from db.comparison_repository import ensure_preferences, get_preferences, upsert_comparison_account
+    from tests.test_daily_update import _setup as daily_setup
+
+    daily_setup(tmp_path, monkeypatch)
+    with get_connection() as conn:
+        account = upsert_comparison_account(conn, external_id="ig-x", username="eerste")
+        upsert_comparison_account(conn, external_id="ig-x", username="tweede", access_status="error",
+                                  last_access_error="weg")
+        ensure_preferences(conn, own_account_id=account, competitors=["a"])
+        ensure_preferences(conn, own_account_id=None, competitors=["b"])
+        conn.commit()
+        row = conn.execute("SELECT username, access_status, last_access_error FROM accounts WHERE id = ?",
+                           (account,)).fetchone()
+        assert tuple(row) == ("tweede", "error", "weg")
+        assert get_preferences(conn) == (account, ["a"])
+        upsert_comparison_account(conn, external_id="ig-x", access_status="ok", last_access_error=None)
+        row = conn.execute("SELECT access_status, last_access_error FROM accounts WHERE id = ?",
+                           (account,)).fetchone()
+        assert tuple(row) == ("ok", None)

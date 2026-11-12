@@ -107,6 +107,19 @@ def upsert_comparison_account(
                 last_access_error = ?,
                 updated_at = ?
             WHERE id = ?
+              -- Skip the write when every field already has this value. The
+              -- daily slot calls this on each 5-minute wake; a timestamp-only
+              -- change would upload the whole SQLite snapshot.
+              AND (
+                  name IS NOT COALESCE(?, name)
+                  OR username IS NOT COALESCE(?, username)
+                  OR page_id IS NOT COALESCE(?, page_id)
+                  OR comparison_role IS NOT COALESCE(?, comparison_role)
+                  OR COALESCE(is_discovery_host, 0) IS NOT CASE
+                      WHEN ? = 1 THEN 1 ELSE COALESCE(is_discovery_host, 0) END
+                  OR access_status IS NOT ?
+                  OR last_access_error IS NOT ?
+              )
             """,
             (
                 name,
@@ -118,6 +131,13 @@ def upsert_comparison_account(
                 last_access_error,
                 now,
                 int(existing["id"]),
+                name,
+                username_norm,
+                page_id,
+                comparison_role,
+                1 if is_discovery_host else 0,
+                access_status,
+                last_access_error,
             ),
         )
         return int(existing["id"])
@@ -196,11 +216,17 @@ def ensure_competitor_placeholders(
 def ensure_default_comparison_accounts(conn: sqlite3.Connection) -> ComparisonAccount:
     """Seed discovery host / own account and default competitor usernames."""
     mark_inaccessible_accounts(conn)
+    # The default name only fills a new row. A name Meta returned later must
+    # not be swapped back on every wake (each swap uploads the snapshot).
+    known = conn.execute(
+        "SELECT 1 FROM accounts WHERE platform = 'instagram' AND external_id = ?",
+        (DEFAULT_OWN_EXTERNAL_ID,),
+    ).fetchone()
     own_id = upsert_comparison_account(
         conn,
         external_id=DEFAULT_OWN_EXTERNAL_ID,
         username=DEFAULT_OWN_USERNAME,
-        name=DEFAULT_OWN_NAME,
+        name=None if known else DEFAULT_OWN_NAME,
         comparison_role=ROLE_OWN,
         is_discovery_host=True,
         access_status="ok",
@@ -257,6 +283,10 @@ def ensure_preferences(
     if competitors is not None and not current:
         current = [normalize_username(u) for u in competitors]
     own_id = own_account_id if own_account_id is not None else existing["own_account_id"]
+    if own_id == existing["own_account_id"] and json.dumps(current) == (
+        existing["competitor_usernames_json"] or "[]"
+    ):
+        return
     conn.execute(
         """
         UPDATE comparison_preferences
