@@ -1431,6 +1431,12 @@ def _refresh_cycle_status(conn, cycle_id: int, now: datetime) -> None:
     else:
         status = "incomplete"
         finished = cycle["finished_at"] or _iso(now)
+    # Every wake passes here. Writing only a new updated_at would change the
+    # SQLite file, and each change uploads the whole snapshot (thumbnails
+    # included). Leave the row alone when nothing about the cycle changed.
+    unchanged = cycle["status"] == status and cycle["finished_at"] == finished
+    if unchanged and (runnable or cycle["next_run_at"] is None):
+        return
     if runnable:
         conn.execute(
             """

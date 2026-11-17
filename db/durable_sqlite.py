@@ -351,6 +351,7 @@ def restore_database(path: Path, store: SnapshotStore) -> bool:
     if _sha256(payload) != pointer.sha256:
         raise DurableConflict("downloaded snapshot hash does not match the pointer")
     temp = path.with_name(path.name + ".download")
+    path.parent.mkdir(parents=True, exist_ok=True)
     temp.write_bytes(payload)
     try:
         found = read_generation(temp)
