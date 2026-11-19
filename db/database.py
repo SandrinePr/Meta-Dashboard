@@ -236,8 +236,16 @@ def ensure_seed_database(db_path: Path | None = None) -> bool:
     return seeded
 
 
+_schema_ready: set[str] = set()
+
+
 def initialize_database(db_path: Path | None = None, schema_path: Path | None = None) -> None:
-    """Create all tables and indexes from schema.sql, seeding first if needed."""
+    """Create all tables and indexes from schema.sql, seeding first if needed.
+
+    Later calls in the same process for the same file only open the database.
+    Re-applying the schema on every five-minute tick rewrites SQLite pages and
+    makes an unchanged snapshot look new.
+    """
     from db.migrate import apply_comparison_schema
 
     from db.durable_sqlite import restore_if_configured
@@ -245,6 +253,9 @@ def initialize_database(db_path: Path | None = None, schema_path: Path | None = 
     settings = get_settings()
     effective_db_path = db_path or settings.database_path
     effective_schema_path = schema_path or Path(__file__).with_name("schema.sql")
+    ready_key = str(effective_db_path.resolve())
+    if ready_key in _schema_ready:
+        return
 
     restore_if_configured(effective_db_path)
     ensure_seed_database(effective_db_path)
@@ -257,3 +268,4 @@ def initialize_database(db_path: Path | None = None, schema_path: Path | None = 
     from db.thumb_store import materialize_thumbnails
 
     materialize_thumbnails(MEDIA_DIR, effective_db_path)
+    _schema_ready.add(ready_key)

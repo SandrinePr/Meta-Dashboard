@@ -23,6 +23,7 @@ from db.comparison_repository import (
     upsert_comparison_post,
 )
 from db.database import get_connection, initialize_database
+from db.durable_sqlite import backup_bytes, publish_database
 from meta.client import MetaRequestError
 from sync.growth_cycle import (
     GrowthMediaItem,
@@ -271,6 +272,32 @@ def test_restart_keeps_the_original_measurement(tmp_path: Path, monkeypatch) -> 
     assert script.steps[-1] == "posts"
     own_rows = [row for row in _measurements() if row[0] == "theartofliving.online"]
     assert own_rows == before
+
+
+def test_waiting_tick_does_not_upload_a_new_snapshot(tmp_path: Path, monkeypatch) -> None:
+    db_path = tmp_path / "growth_cycle.db"
+    _setup(tmp_path, monkeypatch)
+    script = _Script({})
+    start = _friday()
+    from tests.test_durable_sqlite import MemoryStore
+
+    store = MemoryStore()
+    stored = tick_growth_cycle(now=start, fetcher=script)
+    assert stored.action == "stored"
+    assert publish_database(db_path, store, holder="web-1") == "published"
+    uploaded = len(store.assets)
+    unchanged = backup_bytes(db_path)
+
+    waiting = tick_growth_cycle(now=start + timedelta(minutes=5), fetcher=script)
+    assert waiting.action == "wait"
+    assert backup_bytes(db_path) == unchanged
+    assert publish_database(db_path, store, holder="web-1") == "unchanged"
+    assert len(store.assets) == uploaded
+
+    again = tick_growth_cycle(now=start + timedelta(hours=1), fetcher=script)
+    assert again.action == "stored"
+    assert publish_database(db_path, store, holder="web-1") == "published"
+    assert len(store.assets) == uploaded + 1
 
 
 def test_second_trigger_does_not_fetch_again(tmp_path: Path, monkeypatch) -> None:

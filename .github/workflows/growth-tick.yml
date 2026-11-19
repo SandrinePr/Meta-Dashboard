@@ -23,6 +23,6 @@ jobs:
           python-version: "3.11"
       - name: Run one growth step
         env:
-          DASHBOARD_URL: https://meta-dashboard-9n92.onrender.com
+          DASHBOARD_URL: https://meta-dashboard-i5rq.onrender.com
           GROWTH_TICK_SECRET: ${{ secrets.GROWTH_TICK_SECRET }}
         run: python scripts/wake_dashboard.py

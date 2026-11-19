@@ -23,6 +23,6 @@ services:
       # Do not point them at SandrinePr/Meta-Dashboard.
 
 # The hourly trigger is .github/workflows/growth-tick.yml on the existing
-# GitHub account. It calls https://meta-dashboard-9n92.onrender.com/internal/growth-tick
+# GitHub account. It calls https://meta-dashboard-i5rq.onrender.com/internal/growth-tick
 # every hour, including night, and fails unless the body is a real tick.
 # There is no Render cron here, so the old wake job is not created again.

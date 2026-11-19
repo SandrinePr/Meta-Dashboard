@@ -326,7 +326,11 @@ def publish_database(
         if previous_asset:
             keep.add(previous_asset)
         store.prune(keep)
-        logger.info("Published SQLite snapshot version %s", new_version)
+        logger.info(
+            "Published SQLite snapshot version %s (%s bytes)",
+            new_version,
+            len(payload),
+        )
         return "published"
 
 

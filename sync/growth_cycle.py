@@ -1431,6 +1431,15 @@ def _refresh_cycle_status(conn, cycle_id: int, now: datetime) -> None:
     else:
         status = "incomplete"
         finished = cycle["finished_at"] or _iso(now)
+    next_run = None if not runnable else cycle["next_run_at"]
+    # A waiting tick used to rewrite updated_at every five minutes. That made
+    # the snapshot hash differ and uploaded the whole database with no new data.
+    if (
+        str(cycle["status"] or "") == status
+        and (cycle["finished_at"] or None) == finished
+        and (cycle["next_run_at"] or None) == (next_run or None)
+    ):
+        return
     if runnable:
         conn.execute(
             """
