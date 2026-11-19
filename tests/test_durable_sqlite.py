@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import sqlite3
+import stat
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -77,6 +79,50 @@ def _marker(path: Path) -> str:
     finally:
         conn.close()
     return str(row[0])
+
+
+def test_readonly_snapshot_file_still_publishes_and_shutdown_skips_upload(
+    tmp_path: Path,
+) -> None:
+    """The old fixed destination name must not block a later copy."""
+    source = tmp_path / "source.db"
+    _db(source, "step-1")
+    stale = source.with_name(source.name + ".snapshot")
+    stale.write_bytes(b"not a database")
+    os.chmod(stale, stat.S_IREAD)
+    store = MemoryStore()
+    assert publish_database(source, store, holder="web-1") == "published"
+    # Shutdown uses the same publish path. Nothing changed, so no second file.
+    assert publish_database(source, store, holder="web-1") == "unchanged"
+    assert len(store.assets) == 1
+    with sqlite3.connect(source) as conn:
+        conn.execute("UPDATE notes SET value = 'step-2'")
+        conn.commit()
+    assert publish_database(source, store, holder="web-1") == "published"
+    assert len(store.assets) == 2
+    restored = tmp_path / "restored.db"
+    assert restore_database(restored, store) is True
+    assert _marker(restored) == "step-2"
+
+
+def test_backup_uses_memory_when_no_temporary_file_can_be_written(
+    tmp_path: Path, monkeypatch
+) -> None:
+    source = tmp_path / "source.db"
+    _db(source, "kept")
+    def _no_temp(**_kwargs: object) -> tuple[int, str]:
+        raise PermissionError("readonly")
+
+    monkeypatch.setattr("db.durable_sqlite.tempfile.mkstemp", _no_temp)
+    from db.durable_sqlite import backup_bytes
+
+    first = backup_bytes(source)
+    second = backup_bytes(source)
+    assert first[:16] == b"SQLite format 3\x00"
+    assert first == second
+    store = MemoryStore()
+    assert publish_database(source, store, holder="web-1") == "published"
+    assert publish_database(source, store, holder="web-1") == "unchanged"
 
 
 def test_publish_then_restore_keeps_the_step(tmp_path: Path) -> None:

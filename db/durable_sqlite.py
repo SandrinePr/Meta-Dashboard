@@ -16,6 +16,7 @@ import hashlib
 import logging
 import os
 import sqlite3
+import tempfile
 import threading
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
@@ -167,19 +168,45 @@ def _set_generation(path: Path, generation: int) -> None:
 
 
 def backup_bytes(path: Path) -> bytes:
-    temp = path.with_name(path.name + ".snapshot")
+    """Copy the database to bytes without writing the live file.
+
+    The destination used to be a fixed ``name.snapshot`` file. Shutdown hit
+    ``attempt to write a readonly database`` when that leftover file could not
+    be written. A new temporary file keeps the same bytes as before, so an
+    unchanged database still matches the published hash. The live file is
+    only read.
+    """
     source = _connect(path)
-    target = sqlite3.connect(temp)
+    temp_name = ""
     try:
-        source.backup(target)
-        target.commit()
+        try:
+            handle, temp_name = tempfile.mkstemp(
+                prefix=f"{path.name}.",
+                suffix=".snapshot",
+                dir=path.parent,
+            )
+            os.close(handle)
+            target = sqlite3.connect(temp_name)
+            try:
+                source.backup(target)
+                target.commit()
+            finally:
+                target.close()
+            return Path(temp_name).read_bytes()
+        except (OSError, sqlite3.OperationalError) as exc:
+            if isinstance(exc, sqlite3.OperationalError) and "readonly" not in str(exc).lower():
+                raise
+            memory = sqlite3.connect(":memory:")
+            try:
+                source.backup(memory)
+                memory.commit()
+                return memory.serialize()
+            finally:
+                memory.close()
     finally:
-        target.close()
         source.close()
-    try:
-        return temp.read_bytes()
-    finally:
-        temp.unlink(missing_ok=True)
+        if temp_name:
+            Path(temp_name).unlink(missing_ok=True)
 
 
 def _sha256(data: bytes) -> str:
